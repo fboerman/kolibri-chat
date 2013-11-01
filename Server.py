@@ -1,19 +1,19 @@
 __author__ = 'williewonka-2013'
-__version__ = 0.3
+__version__ = 0.4
 
 import socketserver
 import argparse
 import time
 import threading
 
-connectedusers = []
 users = []
+connections = []
 
 class ThreadedServerHandler(socketserver.BaseRequestHandler):
 
     def handle(self): #the handler for the server, this handles the receiving and distributing of messages
         addr = self.request.getpeername()[0]
-        self.data = self.request.recv(1024).strip()
+        self.data = self.request.recv(1024)
         data = str(self.data, "utf-8")
         try:
             NAME = data.split(" ")[0]
@@ -30,30 +30,45 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
             return
 
         client = [NAME, PASS]
-        global connectedusers
-
         if client not in users:
             self.request.sendall(bytes("ERROR: no known user and password combination", "utf-8"))
             print("ERROR: client from "+str(addr)+" failed login with user "+NAME)
             return
 
-        for cu in connectedusers:
-            if cu[0] == NAME:
-                self.request.sendall(bytes("ERROR: user already logged in", "utf-8"))
-                print("ERROR: client from "+str(addr)+" logged in with already online user "+NAME)
+        global connections
+        for room in connections:
+            for connecteduser in room:
+                if connecteduser[0] == NAME:
+                    self.request.sendall(bytes("ERROR: user already logged in", "utf-8"))
+                    print("ERROR: client from "+str(addr)+" logged in with already online user "+NAME)
+                    return
+
+        self.request.sendall(bytes("OK "+str(len(connections)-1),  "utf-8"))
+
+        while True:
+            try:
+                ROOM = int(self.request.recv(1024))
+            except:
+                print("ERROR: client from "+str(addr)+" with user "+NAME+" disconnected during login process")
                 return
 
-        self.request.sendall(bytes("OK",  "utf-8"))
+            if ROOM >= len(connections):
+                self.request.sendall(bytes("ERROR", "utf-8"))
+            else:
+                self.request.sendall(bytes("OK", "utf-8"))
+                break
 
-        print("INFO: client "+NAME+" authenticated from "+addr)
+
+        print("INFO: client "+NAME+" authenticated from "+addr+" into room "+str(ROOM))
         user = [NAME, self]
-        connectedusers.append(user)
+        connections[ROOM].append(user)
+
         while 1:
             try:
                 self.data = str(self.request.recv(1024), "utf-8")
                 self.request.sendall(bytes("OK","utf-8"))
 
-                for u in connectedusers:
+                for u in connections[ROOM]:
                     if u[0] != NAME:
                         socket = u[1]
                         socket.request.sendall(bytes(NAME+": "+self.data, "utf-8"))
@@ -61,8 +76,8 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
                 print(NAME + ": " + self.data)
 
             except:
-                print("INFO: client "+NAME+" from "+addr+" disconnected")
-                connectedusers.remove(user)
+                print("INFO: client "+NAME+" from "+addr+" in room "+ROOM+" disconnected")
+                connections[ROOM].remove(user)
                 return
 
 
@@ -74,8 +89,15 @@ class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 if __name__ == "__main__":
     print("Kolibri server version "+str(__version__))
     parser = argparse.ArgumentParser(description='the server component of kolibri chat')
-    parser.add_argument('--port', nargs='?', const=1, type=int, default=9999, help='specify the port number, defaults to 9999')
-    HOST, PORT = "192.168.0.104", parser.parse_args().port
+    parser.add_argument('--ip', nargs='?', const=1, type=str, default="localhost", help='specify the ip adress wich the server will bind to, defaults to localhost')
+    parser.add_argument('--port', nargs='?', const=1, type=int, default=6000, help='specify the port number, defaults to 9999')
+    parser.add_argument('--numrooms', nargs='?', const=1, type=int, default=1, help='number of chatrooms that is available, defaults to 1')
+
+    HOST, PORT, NUMROOMS = parser.parse_args().ip, parser.parse_args().port, parser.parse_args().numrooms
+
+    for i in range(0, NUMROOMS):
+        connections.append([])
+
     print("port: "+str(PORT))
     print("reading database ...")
     time.sleep(1)

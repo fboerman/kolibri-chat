@@ -1,5 +1,5 @@
 __author__ = 'Williewonka-2013'
-__version__ = 0.3
+__version__ = 0.4
 
 import socket
 import argparse
@@ -55,15 +55,36 @@ if __name__ == "__main__":
 
     print("connected! logging in to system ...")
     time.sleep(1)
-    sock.send(bytes(NAME+" "+PASS+" "+str(__version__), "utf-8"))
-    answer = str(sock.recv(1024), "utf-8")
+    sock.sendall(bytes(NAME+" "+PASS+" "+str(__version__), "utf-8"))
+    try:
+        answer = str(sock.recv(1024), "utf-8")
+    except:
+        print("server disconnected during login communication, exiting client")
+        sock.close()
+        sys.exit()
 
-    if answer == 'OK':
+    if answer.split(" ")[0] == "OK":
+        ROOM = 0
+        print("userlogin succesfull!")
+        while True:
+            room = input("please select a room(0,"+str(answer.split(" ")[1])+"): ")
+            sock.sendall(bytes(room, "utf-8"))
+            try:
+                answer2 = str(sock.recv(1024), "utf-8")
+            except:
+                print("server disconnected during login communication, exiting client")
+                sock.close()
+                sys.exit()
+            if answer2 != "OK":
+                print("invalid room number, please try again")
+            else:
+                break
+
         thread = threading.Thread(target=ServerHandler, args=(sock,NAME))
         thread.deamon = True
         thread.start()
-        print('login succesfull\nyou can now begin sending messages\ntype help for available commands')
-        while 1:
+        print('roomlogin succesfull\nyou can now begin sending messages\ntype help for available commands')
+        while True:
             if not thread.is_alive():
                 break
 
