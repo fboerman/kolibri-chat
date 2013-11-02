@@ -1,5 +1,5 @@
 __author__ = 'williewonka-2013'
-__version__ = 0.4
+__version__ = 0.5
 
 import socketserver
 import argparse
@@ -26,7 +26,7 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
 
         if VERSION != str(__version__):
             self.request.sendall(bytes("ERROR: wrong version match, server version: "+str(__version__), "utf-8"))
-            print("ERROR: client from "+str(addr)+"with username "+NAME+" connected with wrong version "+VERSION)
+            print("ERROR: client from "+str(addr)+" with username "+NAME+" connected with wrong version "+VERSION)
             return
 
         client = [NAME, PASS]
@@ -63,9 +63,21 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
         user = [NAME, self]
         connections[ROOM].append(user)
 
-        while 1:
+        while True:
             try:
                 self.data = str(self.request.recv(1024), "utf-8")
+                if " " in self.data:
+                    if self.data.split(" ")[0] == "switch":
+                        if int(self.data.split(" ")[1]) >= len(connections):
+                            self.request.sendall(bytes("ERROR"))
+                        else:
+                            connections[ROOM].remove(user)
+                            ROOM = int(self.data.split(" ")[1])
+                            connections[ROOM].append(user)
+                            self.request.sendall(bytes("OK", "utf-8"))
+                            print("INFO: user "+NAME+" switched to room "+str(ROOM))
+                            continue
+
                 self.request.sendall(bytes("OK","utf-8"))
 
                 for u in connections[ROOM]:
@@ -73,10 +85,10 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
                         socket = u[1]
                         socket.request.sendall(bytes(NAME+": "+self.data, "utf-8"))
 
-                print(NAME + ": " + self.data)
+                print(NAME + "<"+str(ROOM)+">: " + self.data)
 
             except:
-                print("INFO: client "+NAME+" from "+addr+" in room "+ROOM+" disconnected")
+                print("INFO: client "+NAME+" from "+addr+" in room "+str(ROOM)+" disconnected")
                 connections[ROOM].remove(user)
                 return
 

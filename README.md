@@ -7,6 +7,9 @@ use the -h or --help argument in commandline to see on how to use
 
 changelog
 ---------
+v0.5
+* added switching chatrooms and some code optimalization
+
 v0.4
 * added chatrooms -> extra parmeter for server: number of chatrooms
 

@@ -1,5 +1,5 @@
 __author__ = 'Williewonka-2013'
-__version__ = 0.4
+__version__ = 0.5
 
 import socket
 import argparse
@@ -31,6 +31,17 @@ def ServerHandler(s,clientname):
             if serverinput != "":
                 print(serverinput)
 
+def SendServer(message, s, verificationtoken):
+    try:
+        s.sendall(bytes(message, "utf-8"))
+    except:
+        if thread.is_alive():
+            print("connection with server lost, exiting client")
+            s.close()
+        sys.exit()
+
+    verficationpipe.put(verificationtoken)
+    verficationpipe.join()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='client to connect to a kolibri chat server')
@@ -64,10 +75,10 @@ if __name__ == "__main__":
         sys.exit()
 
     if answer.split(" ")[0] == "OK":
-        ROOM = 0
+        MAXROOM = int(answer.split(" ")[1])
         print("userlogin succesfull!")
         while True:
-            room = input("please select a room(0,"+str(answer.split(" ")[1])+"): ")
+            room = input("please select a room(0,"+str(MAXROOM)+"): ")
             sock.sendall(bytes(room, "utf-8"))
             try:
                 answer2 = str(sock.recv(1024), "utf-8")
@@ -90,21 +101,24 @@ if __name__ == "__main__":
 
             clientinput = input()
             if clientinput == "help":
-                print("available commands:\n\tclose: disconnect from the server\n\thelp: this helpmessage")
+                print("available commands:\n\tclose: disconnect from the server\n\tswitch <roomnumber>: switch chatroom\n\thelp: this helpmessage")
             elif clientinput == "close":
                 print("disconnecting client")
                 sock.close()
                 sys.exit()
-            else:
+            elif clientinput.split(" ")[0] == "switch":
                 try:
-                    sock.sendall(bytes(clientinput, "utf-8"))
+                    if int(clientinput.split(" ")[1]) > MAXROOM:
+                        print("ERROR: invalid roomnumber")
+                        continue
+                    else:
+                        SendServer(clientinput, sock, "OK")
+                        print("INFO: Room succesfully switched!")
+                        continue
                 except:
-                    if thread.is_alive():
-                        print("connection with server lost, exiting client")
-                        sock.close()
-                    break
-                verficationpipe.put("OK")
-                verficationpipe.join()
+                    print("ERROR: wrong syntax")
+            else:
+                SendServer(clientinput, sock, "OK")
 
     else:
         print("login failed: "+answer+", client will now exit")
