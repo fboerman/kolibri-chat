@@ -1,5 +1,5 @@
 __author__ = 'Williewonka-2013'
-__version__ = 0.5
+__version__ = 0.6
 
 import socket
 import argparse
@@ -16,16 +16,23 @@ def ServerHandler(s,clientname):
             serverinput = str(s.recv(1024), "utf-8")
         except:
             print("server dropped, exiting client")
+            if not verficationpipe.empty():
+                verficationpipe.get()
+                verficationpipe.task_done()
             s.close()
             sys.exit()
 
         if not verficationpipe.empty():
             token = verficationpipe.get()
-            if serverinput != token:
+            if token not in serverinput:
                 print("verification with server failed: "+serverinput+", exiting  client")
                 s.close()
+                verficationpipe.task_done()
+                time.sleep(1)
                 sys.exit()
             else:
+                if "-" in serverinput:
+                    print("INFO: "+serverinput.split("-")[1])
                 verficationpipe.task_done()
         else:
             if serverinput != "":
@@ -97,11 +104,12 @@ if __name__ == "__main__":
         print('roomlogin succesfull\nyou can now begin sending messages\ntype help for available commands')
         while True:
             if not thread.is_alive():
-                break
+                sock.close()
+                sys.exit()
 
             clientinput = input()
             if clientinput == "help":
-                print("available commands:\n\tclose: disconnect from the server\n\tswitch <roomnumber>: switch chatroom\n\thelp: this helpmessage")
+                print("available commands:\n\tclose: disconnect from the server\n\tswitch <roomnumber>: switch chatroom\n\tkick <user>: kick user from room\n\tlist: list of connected users\n\thelp: this helpmessage")
             elif clientinput == "close":
                 print("disconnecting client")
                 sock.close()
