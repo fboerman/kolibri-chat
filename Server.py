@@ -103,6 +103,7 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
                                 try:
                                     connections[ROOM].remove(targettuple)
                                     print("INFO: user "+target+" kicked by admin "+NAME+" from room "+str(ROOM))
+                                    SendRound("user "+target+" kicked by admin "+NAME, ROOM, NAME)
                                     self.request.sendall(bytes("OK-user "+target+" kicked from room", "utf-8"))
                                     continue
                                 except:
@@ -111,7 +112,7 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
                                     continue
                             else:
                                 print("INFO: nonadmin user "+NAME+" tried admin command '"+self.data+"' in room "+str(ROOM))
-                                self.request.sendall(bytes("OK-you do not have enought right to do that", "utf-8"))
+                                self.request.sendall(bytes("OK-you do not have enought rights to do that", "utf-8"))
                                 continue
 
                     self.request.sendall(bytes("OK","utf-8"))
