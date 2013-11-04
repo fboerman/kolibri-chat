@@ -1,5 +1,5 @@
 __author__ = 'Williewonka-2013'
-__version__ = 0.6
+__version__ = 0.7
 
 import socket
 import argparse
@@ -109,7 +109,13 @@ if __name__ == "__main__":
 
             clientinput = input()
             if clientinput == "help":
-                print("available commands:\n\tclose: disconnect from the server\n\tswitch <roomnumber>: switch chatroom\n\tkick <user>: kick user from room\n\tlist: list of connected users\n\thelp: this helpmessage")
+                print("available commands:\n"
+                      "\tclose: disconnect from the server\n"
+                      "\tswitch <roomnumber>: switch chatroom\n"
+                      "\tkick <user>: kick user from room\n"
+                      "\tlist: list of connected users\n"
+                      "\twhisper <user>:<message> : send a private message to a connected user, crossroom supported\n"
+                      "\thelp: this helpmessage")
             elif clientinput == "close":
                 print("disconnecting client")
                 sock.close()

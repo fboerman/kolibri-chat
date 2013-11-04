@@ -7,6 +7,12 @@ use the -h or --help argument in commandline to see on how to use
 
 changelog
 ---------
+v0.7:
+* serverconsole can now kick user
+* new command: list gives a list of connected users both on server and client
+* new command: whipser user message : sends message to specified user only
+* added a exe package for the client, for users who dont have python installed. needs to be called from commandline
+
 v0.6:
 * global broadcast for events such as connecting user
 * user can now be an admin

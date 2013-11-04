@@ -1,11 +1,12 @@
 __author__ = 'williewonka-2013'
-__version__ = 0.6
+__version__ = 0.7
 
 import socketserver
 import argparse
 import time
 import threading
 import sys
+import os
 
 users = []
 connections = []
@@ -91,6 +92,7 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
                                 self.request.sendall(bytes("OK", "utf-8"))
                                 print("INFO: user "+NAME+" switched to room "+str(ROOM))
                                 SendRound("user "+NAME+" switched to other room", oldroom, "SERVER")
+                                SendRound("connected", ROOM, NAME)
                                 continue
                         elif self.data.split(" ")[0] == "kick":
                             if  ADMIN == 1:
@@ -114,14 +116,29 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
                                 print("INFO: nonadmin user "+NAME+" tried admin command '"+self.data+"' in room "+str(ROOM))
                                 self.request.sendall(bytes("OK-you do not have enought rights to do that", "utf-8"))
                                 continue
+                        elif self.data.split(" ")[0] == "whisper":
+                            target = self.data.split(":")[0].split(" ")[1]
+                            for room in connections:
+                                for u in room:
+                                    if u[0] == target:
+                                        try:
+                                            u[1].request.sendall(bytes("whisper "+NAME+": "+self.data.split(":")[1], "utf-8"))
+                                            self.request.sendall(bytes("OK", "utf-8"))
+                                            print("whisper from "+NAME+" to "+target+": "+ self.data.split(":")[1])
+                                        except:
+                                            self.request.sendall(bytes("OK-target disconnected", "utf-8"))
+
+                            continue
+
+                    elif self.data == "list":
+                        list = "connected users in room "+str(ROOM)
+                        for u in connections[ROOM]:
+                            list += "\n\t"+u[0]
+                        self.request.sendall(bytes("OK-"+list, "utf-8"))
+                        continue
 
                     self.request.sendall(bytes("OK","utf-8"))
-
                     SendRound(self.data, ROOM, NAME)
-                    #for u in connections[ROOM]:
-                    #    if u[0] != NAME:
-                    #        socket = u[1]
-                    #        socket.request.sendall(bytes(NAME+": "+self.data, "utf-8"))
 
                     print(NAME + "<"+str(ROOM)+">: " + self.data)
 
@@ -204,10 +221,28 @@ if __name__ == "__main__":
                     message = command.split(":")[1]
                     for i in range (0, len(connections)):
                         SendRound(message, i, "SERVER")
+            elif command == "list":
+                for i in range(0, len(connections)):
+                    print("room "+str(i)+": ")
+                    for user in connections[i]:
+                        print("\t"+user[0])
+            elif command.split(" ")[0] == "kick":
+                target = command.split(" ")[1]
+                found = False
+                for i in range(0, len(connections)):
+                    for user in connections[i]:
+                        if user[0] == target:
+                            connections[i].remove(user)
+                            print("INFO: user "+target+" kicked from room "+str(i))
+                            SendRound("user "+target+" kicked by SERVER", i, "SERVER")
+                            found = True
+                if not found:
+                    print("user "+target+" not connected to server")
             elif command == "help":
                 print("available commands:\n"
                       "\tsay>room:message : when no room given, broadcast to all the rooms otherwise just send to specified room\n"
                       "\tkick user : kicks user from the server\n"
+                      "\tlist : list of connected users per room\n"
                       "\thelp : this help message")
         except:
             pass
