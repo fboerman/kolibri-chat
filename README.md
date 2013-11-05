@@ -7,6 +7,14 @@ use the -h or --help argument in commandline to see on how to use
 
 changelog
 ---------
+
+v0.8:
+* adminlevels
+* adminlevel 1 cant kick fellow admins
+* added commands for ipban en userban for both server and client, requires admin level 2 on clientside
+* added unban commands for these actions, same rules aply
+* added server commmand userlist and ipbanlist
+
 v0.7:
 * serverconsole can now kick user
 * new command: list gives a list of connected users both on server and client

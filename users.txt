@@ -1,2 +1,4 @@
-user1 pass1 1
-user2 pass2 0
+admin1 apass1 2 0
+admin2 apass2 1 0
+user1 pass1 0 0
+user2 pass2 0 0

@@ -1,15 +1,16 @@
 __author__ = 'williewonka-2013'
-__version__ = 0.7
+__version__ = 0.8
 
 import socketserver
 import argparse
 import time
 import threading
 import sys
-import os
 
 users = []
 connections = []
+connectedclients= []
+bannedips = []
 
 class ThreadedServerHandler(socketserver.BaseRequestHandler):
 
@@ -32,14 +33,20 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
             return
 
         found = False
-        ADMIN = 0
 
         for u in users:
             if u[0] == NAME:
                 if u[1] == PASS:
+                    if u[3] == 1:
+                        self.request.sendall(bytes("ERROR: this user is banned", "utf-8"))
+                        print("ERROR: client from "+str(addr)+" tried loggin in with banned user "+NAME)
+                        return
                     found = True
-                    ADMIN = u[2]
 
+        if addr in bannedips:
+            print("ERROR: client from banned ip "+addr+" tried logging in with user "+NAME)
+            self.request.sendall(bytes("ERROR: your ip has been banned from this server", "utf-8"))
+            return
 
         if found:
             global connections
@@ -47,7 +54,7 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
                 for connecteduser in room:
                     if connecteduser[0] == NAME:
                         self.request.sendall(bytes("ERROR: user already logged in", "utf-8"))
-                        print("ERROR: client from "+str(addr)+" logged in with already online user "+NAME)
+                        print("ERROR: client from "+str(addr)+" tried logging in with already online user "+NAME)
                         return
 
             self.request.sendall(bytes("OK "+str(len(connections)-1),  "utf-8"))
@@ -70,6 +77,7 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
             SendRound("connected", ROOM, NAME)
             user = [NAME, self]
             connections[ROOM].append(user)
+            connectedclients.append([NAME, addr])
 
             while True:
                 try:
@@ -91,31 +99,113 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
                                 connections[ROOM].append(user)
                                 self.request.sendall(bytes("OK", "utf-8"))
                                 print("INFO: user "+NAME+" switched to room "+str(ROOM))
-                                SendRound("user "+NAME+" switched to other room", oldroom, "SERVER")
+                                SendRound("INFO: user "+NAME+" switched to other room", oldroom, "SERVER")
                                 SendRound("connected", ROOM, NAME)
                                 continue
                         elif self.data.split(" ")[0] == "kick":
-                            if  ADMIN == 1:
+                            if IsAdmin(NAME) == 0:
+                                print("INFO: nonadmin user "+NAME+" tried admin command '"+self.data+"' in room "+str(ROOM))
+                                self.request.sendall(bytes("OK-you do not have enought rights to do that", "utf-8"))
+                                continue
+                            else:
+                                targetroom = 0
                                 target = self.data.split(" ")[1]
                                 targettuple = []
-                                for u in connections[ROOM]:
-                                    if u[0] == target:
-                                        targettuple = u
-
+                                if  IsAdmin(NAME) == 1:
+                                    targetroom = ROOM
+                                    for u in connections[ROOM]:
+                                        if u[0] == target:
+                                            targettuple = u
+                                elif IsAdmin(NAME) == 2:
+                                    for i in range(0, len(connections)):
+                                        for u in connections[i]:
+                                            if u[0] == target:
+                                                targettuple = u
+                                if IsAdmin(NAME) == 1:
+                                    if u[3] > 0:
+                                        print("INFO: admin "+NAME+" tried kickin fellow admin "+target)
+                                        self.request.sendall(bytes("OK-cant kick fellow admins", "utf-8"))
+                                        continue
                                 try:
-                                    connections[ROOM].remove(targettuple)
-                                    print("INFO: user "+target+" kicked by admin "+NAME+" from room "+str(ROOM))
+                                    connections[targetroom].remove(targettuple)
+                                    for client in connectedclients:
+                                        if client[0] == target:
+                                            connectedclients.remove(client)
+                                    print("INFO: user "+target+" kicked by admin "+NAME+" from room "+str(targetroom))
                                     SendRound("user "+target+" kicked by admin "+NAME, ROOM, NAME)
                                     self.request.sendall(bytes("OK-user "+target+" kicked from room", "utf-8"))
                                     continue
                                 except:
-                                    print("INFO: user "+NAME+" tried to kick nonconnected user "+target+" in room "+str(ROOM))
-                                    self.request.sendall(bytes("OK-target user not in room", "utf-8"))
+                                    print("INFO: admin "+NAME+" tried to kick nonconnected user "+target+" in room "+str(ROOM))
+                                    self.request.sendall(bytes("OK-target user not in this room or not enough adminrights", "utf-8"))
                                     continue
+                        elif self.data.split(" ")[0] == "ipban":
+                            if IsAdmin(NAME) == 2:
+                                target = command.split(" ")[1]
+                                found = False
+                                for client in connectedclients:
+                                    if client[0] == target:
+                                        bannedips.append(client[1])
+                                        print("INFO: admin "+NAME+" banned ip "+client[1]+" from server")
+                                        self.request.sendall(bytes("OK-ip "+client[1]+" banned from server", "utf-8"))
+                                        found = True
+                                if not found:
+                                    self.request.sendall(bytes("OK-user "+target+"not found", "utf-8"))
+                                continue
                             else:
                                 print("INFO: nonadmin user "+NAME+" tried admin command '"+self.data+"' in room "+str(ROOM))
-                                self.request.sendall(bytes("OK-you do not have enought rights to do that", "utf-8"))
+                                self.request.sendall(bytes("OK-you do not have enough rights to do that", "utf-8"))
                                 continue
+                        elif self.data.split(" ")[0] == "ipunban":
+                            if IsAdmin(NAME) == 2:
+                                bannedips.remove(self.data.split(" ")[1])
+                                print("INFO: admin "+NAME+" unbanned ip "+self.data.split(" ")[1])
+                                self.request.sendall(bytes("OK-ip unbanned", "utf-8"))
+                                continue
+                            else:
+                                print("INFO: admin level 1 "+NAME+" tried admin command '"+self.data+"' in room "+str(ROOM))
+                                self.request.sendall(bytes("OK-you do not have enough rights to do that", "utf-8"))
+                                continue
+                        elif self.data.split(" ")[0] == "ban":
+                            if IsAdmin(NAME) == 2:
+                                target = self.data.split(" ")[1]
+                                found = False
+                                for u in users:
+                                    if u[0] == target:
+                                        u[3] = 1
+                                        print("INFO: admin "+NAME+" banned user "+target)
+                                        self.request.sendall(bytes("OK-user "+target+" banned from server", "utf-8"))
+                                        for i in range(0, len(connections)):
+                                            SendRound("admin "+NAME+" banned user "+target, i, "SERVER")
+                                        found = True
+
+                                if not found:
+                                    self.request.sendall(bytes("OK-user "+target+" not found in database", "utf-8"))
+                                continue
+                            else:
+                                print("INFO: admin level 1 "+NAME+" tried admin command '"+self.data+"' in room "+str(ROOM))
+                                self.request.sendall(bytes("OK-you do not have enough rights to do that", "utf-8"))
+                                continue
+                        elif self.data.split(" ")[0] == "unban":
+                            if IsAdmin(NAME) == 2:
+                                target = self.data.split(" ")[1]
+                                found = False
+                                for u in users:
+                                    if u[0] == target:
+                                        u[3] = 0
+                                        print("INFO: admin "+NAME+" unbanned user "+target)
+                                        self.request.sendall(bytes("OK-user "+target+" unbanned from server", "utf-8"))
+                                        for i in range(0, len(connections)):
+                                            SendRound("admin "+NAME+" unbanned user "+target, i, "SERVER")
+                                        found = True
+                                if not found:
+                                    self.request.sendall(bytes("OK-user "+target+" not found in database", "utf-8"))
+                                continue
+                            else:
+                                print("INFO: admin level 1 "+NAME+" tried admin command '"+self.data+"' in room "+str(ROOM))
+                                self.request.sendall(bytes("OK-you do not have enough rights to do that", "utf-8"))
+                                continue
+
                         elif self.data.split(" ")[0] == "whisper":
                             target = self.data.split(":")[0].split(" ")[1]
                             for room in connections:
@@ -138,14 +228,16 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
                         continue
 
                     self.request.sendall(bytes("OK","utf-8"))
+                    if self.data == "":
+                        continue
                     SendRound(self.data, ROOM, NAME)
-
                     print(NAME + "<"+str(ROOM)+">: " + self.data)
 
                 except:
                     print("INFO: client "+NAME+" from "+addr+" in room "+str(ROOM)+" disconnected")
                     try:
                         connections[ROOM].remove(user)
+                        connectedclients.remove([NAME, addr])
                     except:
                         pass
                     SendRound("client "+NAME+" disconnected", ROOM, "SERVER")
@@ -160,7 +252,15 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
 class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     pass
 
+def IsAdmin(User):
+    for u in users:
+        if u[0] == User:
+            return u[2]
+    return 0
+
 def SendRound(Message, Room, Owner):
+    if Message == "":
+        return
     for u in connections[Room]:
         if u[0] != Owner:
             socket = u[1]
@@ -170,6 +270,7 @@ def SendRound(Message, Room, Owner):
                 print("ERROR: failed to send message to user "+u[0])
 
 ThreadedServerHandler.SendRound = SendRound
+ThreadedServerHandler.IsAdmin = IsAdmin
 
 if __name__ == "__main__":
     print("Kolibri server version "+str(__version__))
@@ -191,7 +292,7 @@ if __name__ == "__main__":
     for line in database:
         count += 1
         try:
-            users.append([line.split(" ")[0].strip("\n"), line.split(" ")[1], int(line.split(" ")[2].strip("\n"))])
+            users.append([line.split(" ")[0].strip("\n"), line.split(" ")[1], int(line.split(" ")[2]), int(line.split(" ")[3].strip("\n"))])
         except:
             print("ERROR: failed reading database, server will now exit")
             time.sleep(1)
@@ -233,16 +334,58 @@ if __name__ == "__main__":
                     for user in connections[i]:
                         if user[0] == target:
                             connections[i].remove(user)
+                            for client in connectedclients:
+                                if client[0] == target:
+                                    connectedclients.remove(client)
                             print("INFO: user "+target+" kicked from room "+str(i))
                             SendRound("user "+target+" kicked by SERVER", i, "SERVER")
                             found = True
                 if not found:
                     print("user "+target+" not connected to server")
+            elif command.split(" ")[0] == "ban":
+                target = command.split(" ")[1]
+                for u in users:
+                    if u[0] == target:
+                        u[3] = 1
+                        print("INFO: user "+target+" banned")
+                        for i in range(0, len(connections)):
+                            SendRound("user "+target+" banned by SERVER", i, "SERVER")
+            elif command.split(" ")[0] == "unban":
+                target = command.split(" ")[1]
+                for u in users:
+                    if u[0] == target:
+                        u[3] = 0
+                        print("INFO user "+target+" unbanned")
+                        for i in range(0, len(connections)):
+                            SendRound("user "+target+" unbanned by SERVER", i, "SERVER")
+            elif command == "userlist":
+                print("users in database:\n\tname\t\tadminlevel\tbanstatus")
+                for user in users:
+                    print("\t"+user[0]+"\t\t"+str(user[2])+"\t\t\t"+str(user[3]))
+            elif command == "ipbanlist":
+                print("banned ips:")
+                for ip in bannedips:
+                    print("\t"+ip)
+            elif command.split(" ")[0] == "ipunban":
+                bannedips.remove(command.split(" ")[1])
+                print("INFO: ip "+command.split(" ")[1]+" unbanned")
+            elif command.split(" ")[0] == "ipban":
+                target = command.split(" ")[1]
+                for client in connectedclients:
+                    if client[0] == target:
+                        bannedips.append(client[1])
+                        print("INFO: ip "+client[1]+" banned")
             elif command == "help":
                 print("available commands:\n"
                       "\tsay>room:message : when no room given, broadcast to all the rooms otherwise just send to specified room\n"
                       "\tkick user : kicks user from the server\n"
                       "\tlist : list of connected users per room\n"
+                      "\tuserlist : list of users in database\n"
+                      "\tipban <user>: bans the ip of the given user, you need to issue kick to end current session\n"
+                      "\tipunban <ip>: reverses effect from ipban command\n"
+                      "\tban <user>: bans the given user, same provision as ipban\n"
+                      "\tunban <user>: reverses effect of ban command\n"
+                      "\tipbanlist: gives a list of banned ips\n"
                       "\thelp : this help message")
         except:
             pass
