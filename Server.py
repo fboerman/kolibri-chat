@@ -141,7 +141,7 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
                                     continue
                         elif self.data.split(" ")[0] == "ipban":
                             if IsAdmin(NAME) == 2:
-                                target = command.split(" ")[1]
+                                target = self.data.split(" ")[1]
                                 found = False
                                 for client in connectedclients:
                                     if client[0] == target:
@@ -158,9 +158,12 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
                                 continue
                         elif self.data.split(" ")[0] == "ipunban":
                             if IsAdmin(NAME) == 2:
-                                bannedips.remove(self.data.split(" ")[1])
-                                print("INFO: admin "+NAME+" unbanned ip "+self.data.split(" ")[1])
-                                self.request.sendall(bytes("OK-ip unbanned", "utf-8"))
+                                try:
+                                    bannedips.remove(self.data.split(" ")[1])
+                                    print("INFO: admin "+NAME+" unbanned ip "+self.data.split(" ")[1])
+                                    self.request.sendall(bytes("OK-ip unbanned", "utf-8"))
+                                except:
+                                    self.request.sendall(bytes("OK-ip not banned", "utf-8"))
                                 continue
                             else:
                                 print("INFO: admin level 1 "+NAME+" tried admin command '"+self.data+"' in room "+str(ROOM))
