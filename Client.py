@@ -1,5 +1,5 @@
 __author__ = 'Williewonka-2013'
-__version__ = 0.8
+__version__ = 0.9
 
 import socket
 import argparse
@@ -115,10 +115,14 @@ if __name__ == "__main__":
                       "\tkick <user>: kick user from room\n"
                       "\tlist: list of connected users\n"
                       "\twhisper <user>:<message> : send a private message to a connected user, crossroom supported\n"
+                      "\tchangeownpass <oldpass> <newpass> : changes your password\n"
+                      "commands below are for admins only\n"
                       "\tipban <user>: bans the ip of the given user, you need to issue kick to end current session\n"
                       "\tipunban <ip>: unbans given ip\n"
                       "\tban <user>: bans the given user, same provision as ipban\n"
                       "\tunban <user>: unbans given user\n"
+                      "\tadduser <user> <password> : creates a new user with the specified info\n"
+                      "\tchangepass <user> <newpassword> : changes the password of given user\n"
                       "\thelp: this helpmessage")
             elif clientinput == "close":
                 print("disconnecting client")

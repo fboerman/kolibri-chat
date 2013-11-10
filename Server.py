@@ -1,11 +1,13 @@
 __author__ = 'williewonka-2013'
-__version__ = 0.8
+__version__ = 0.9
 
 import socketserver
 import argparse
 import time
 import threading
 import sys
+import hashlib
+import uuid
 
 users = []
 connections = []
@@ -36,7 +38,7 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
 
         for u in users:
             if u[0] == NAME:
-                if u[1] == PASS:
+                if check_password(u[1],PASS):
                     if u[3] == 1:
                         self.request.sendall(bytes("ERROR: this user is banned", "utf-8"))
                         print("ERROR: client from "+str(addr)+" tried loggin in with banned user "+NAME)
@@ -102,6 +104,18 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
                                 SendRound("INFO: user "+NAME+" switched to other room", oldroom, "SERVER")
                                 SendRound("connected", ROOM, NAME)
                                 continue
+                        elif self.data.split(" ") == "changeownpass":
+                            oldpass = self.data.split(" ")[1]
+                            newpass = self.data.split(" ")[2]
+                            for u in users:
+                                if u[0] == NAME:
+                                    if check_password(u[1], oldpass):
+                                        u[1] = hash_password(newpass)
+                                        print("INFO: user "+NAME+" changed their password")
+                                        self.request.sendall(bytes("OK-password changed", "utf-8"))
+                                    else:
+                                        self.request.sendall(bytes("OK-wrong current password", "utf-8"))
+                            continue
                         elif self.data.split(" ")[0] == "kick":
                             if IsAdmin(NAME) == 0:
                                 print("INFO: nonadmin user "+NAME+" tried admin command '"+self.data+"' in room "+str(ROOM))
@@ -220,13 +234,74 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
                                             print("whisper from "+NAME+" to "+target+": "+ self.data.split(":")[1])
                                         except:
                                             self.request.sendall(bytes("OK-target disconnected", "utf-8"))
+                                        finally:
+                                            break
 
                             continue
+                        elif self.data.split(" ")[0] == "adduser":
+                            if IsAdmin(NAME) == 2:
+                                user = self.data.split(" ")[1]
+                                password = self.data.split(" ")[2]
+                                if FindUser(user):
+                                    self.request.sendall(bytes("user "+user+" already exists", "utf-8"))
+                                    continue
+                                else:
+                                    users.append([user, hash_password(password), 0, 0])
+                                    print("INFO: user "+user+" added by admin "+NAME)
+                                    self.request.sendall(bytes("OK-new user "+user+" added", "utf-8"))
+                                    continue
+                            else:
+                                self.request.sendall(bytes("OK-you do not have enough rights to do that", "utf-8"))
+                                print("INFO: user "+NAME+" tried admin command '"+self.data+"' in room "+str(ROOM))
+                                continue
+                        elif self.data.split(" ")[0] == "changepass":
+                            if IsAdmin(NAME) == 2:
+                                target = self.data.split(" ")[1]
+                                newpass = hash_password(self.data.split(" ")[2])
+                                found = False
+                                for u in users:
+                                    if u[0] == target:
+                                        u[1] = newpass
+                                        print("INFO: admin "+NAME+" changed password of user "+target)
+                                        self.request.sendall(bytes("OK-password of user "+target+" changed", "utf-8"))
+                                        found = True
+                                if not found:
+                                    self.request.sendall(bytes("OK-user "+target+" not found", "utf-8"))
+                                continue
+                            else:
+                                self.request.sendall(bytes("OK-you do not have enough rights to do that", "utf-8"))
+                                print("INFO: user "+NAME+" tried admin command '"+self.data+"' in room "+str(ROOM))
+                                continue
+                        elif self.data.split(" ")[0] == "admin":
+                            if IsAdmin(NAME) == 2:
+                                user = self.data.split(" ")[1]
+                                level = int(self.data.split(" ")[2])
+                                if not FindUser(user):
+                                    self.request.sendall(bytes("OK-user "+user+" not found", "utf-8"))
+                                    continue
+                                for u in users:
+                                    if u[0] == user:
+                                        u[2] = level
+                                print("INFO: adminlevel for user "+user+" set to "+str(level)+" by admin "+NAME)
+                                self.request.sendall(bytes("OK-adminlevel for user "+user+" set to "+str(level),"utf-8"))
+                                continue
+                            else:
+                                self.request.sendall(bytes("OK-you do not have enough rights to do that", "utf-8"))
+                                print("INFO: user "+NAME+" tried admin command '"+self.data+"' in room "+str(ROOM))
+                                continue
 
                     elif self.data == "list":
-                        list = "connected users in room "+str(ROOM)
-                        for u in connections[ROOM]:
-                            list += "\n\t"+u[0]
+                        if IsAdmin(NAME) > 0:
+                            list = "connected users in room\n"
+                            for i in range(0, len(connections)):
+                                list += str(i)+":\n"
+                                for u in connections[i]:
+                                    list += "\t"+u[0]+"\n"
+                        else:
+                            list = "connected users in room "+str(ROOM)
+                            for u in connections[ROOM]:
+                                list += "\n\t"+u[0]
+
                         self.request.sendall(bytes("OK-"+list, "utf-8"))
                         continue
 
@@ -272,8 +347,48 @@ def SendRound(Message, Room, Owner):
             except:
                 print("ERROR: failed to send message to user "+u[0])
 
+def FindUser(user):
+    for u in users:
+        if u[0] == user:
+            return True
+    return False
+
+def ReadDatabase():
+    try:
+        database = open("users.txt", "r")
+        count = 0
+        for line in database:
+            count += 1
+            users.append([line.split(" ")[0].strip("\n"), line.split(" ")[1], int(line.split(" ")[2]), int(line.split(" ")[3].strip("\n"))])
+        database.close()
+        print("read "+str(count)+" users from file to database")
+        count = 0
+        database = open("bannedips.txt", "r")
+        for line in database:
+            count += 1
+            bannedips.append(line)
+        database.close()
+        print("read "+str(count)+" banned ips from file to database")
+    except:
+        print("ERROR: failed reading database, server will now exit")
+        time.sleep(1)
+        database.close()
+        sys.exit()
+
+def hash_password(password):
+    # uuid is used to generate a random number
+    salt = uuid.uuid4().hex
+    return hashlib.sha256(salt.encode() + password.encode()).hexdigest() + ':' + salt
+
+def check_password(hashed_password, user_password):
+    password, salt = hashed_password.split(':')
+    return password == hashlib.sha256(salt.encode() + user_password.encode()).hexdigest()
+
 ThreadedServerHandler.SendRound = SendRound
 ThreadedServerHandler.IsAdmin = IsAdmin
+ThreadedServerHandler.FindUser = FindUser
+ThreadedServerHandler.hash_password = hash_password
+ThreadedServerHandler.check_password = check_password
 
 if __name__ == "__main__":
     print("Kolibri server version "+str(__version__))
@@ -290,21 +405,7 @@ if __name__ == "__main__":
     print("port: "+str(PORT))
     print("reading database ...")
     time.sleep(1)
-    database = open("users.txt", "r")
-    count = 0
-    for line in database:
-        count += 1
-        try:
-            users.append([line.split(" ")[0].strip("\n"), line.split(" ")[1], int(line.split(" ")[2]), int(line.split(" ")[3].strip("\n"))])
-        except:
-            print("ERROR: failed reading database, server will now exit")
-            time.sleep(1)
-            database.close()
-            sys.exit()
-
-    database.close()
-
-    print("read "+str(count)+" users from database")
+    ReadDatabase()
     print("starting server ...")
     time.sleep(1)
     server = ThreadedTCPServer((HOST, PORT), ThreadedServerHandler)
@@ -378,6 +479,55 @@ if __name__ == "__main__":
                     if client[0] == target:
                         bannedips.append(client[1])
                         print("INFO: ip "+client[1]+" banned")
+            elif command.split(" ")[0] == "adduser":
+                user = command.split(" ")[1]
+                password = command.split(" ")[2]
+                if FindUser(user):
+                    print("user "+user+" already exists")
+                    continue
+                else:
+                    users.append([user, hash_password(password), 0, 0])
+                    print("INFO: user "+user+" added")
+                    continue
+            elif command.split(" ")[0] == "admin":
+                user = command.split(" ")[1]
+                level = int(command.split(" ")[2])
+                if not FindUser(user):
+                    print("user "+user+" not found")
+                    continue
+                for u in users:
+                    if u[0] == user:
+                        u[2] = level
+                print("INFO: adminlevel for user "+user+" set to "+str(level))
+                continue
+            elif command == "reload":
+                del users[:]
+                ReadDatabase()
+            elif command == "savedb":
+                newfile = ""
+                for u in users:
+                    newfile += u[0]+" "+u[1]+" "+str(u[2])+" "+str(u[3])+"\n"
+                file = open("users.txt", "w")
+                file.write(newfile)
+                file.close()
+                newfile = ""
+                for ip in bannedips:
+                    newfile += ip +"\n"
+                file = open("bannedips.txt", "w")
+                file.write(newfile)
+                file.close()
+                print("database succesfully written to file")
+            elif command.split(" ")[0] == "changepass":
+                target = command.split(" ")[1]
+                newpass = hash_password(command.split(" ")[2])
+                found = False
+                for u in users:
+                    if u[0] == target:
+                        u[1] = newpass
+                        print("password changed!")
+                        found = True
+                if not found:
+                    print("user not found")
             elif command == "help":
                 print("available commands:\n"
                       "\tsay>room:message : when no room given, broadcast to all the rooms otherwise just send to specified room\n"
@@ -389,6 +539,11 @@ if __name__ == "__main__":
                       "\tban <user>: bans the given user, same provision as ipban\n"
                       "\tunban <user>: reverses effect of ban command\n"
                       "\tipbanlist: gives a list of banned ips\n"
+                      "\tadmin <user> <adminlevel> : sets adminlevel of specified user\n"
+                      "\tadduser <user> <password> : creates a new user with the specified info\n"
+                      "\tchangepass <user> <newpassword> : changes the password of given user\n"
+                      "\tsavedb: saves the database to file\n"
+                      "\treload: reloads the database files\n"
                       "\thelp : this help message")
         except:
             pass

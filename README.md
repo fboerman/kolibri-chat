@@ -5,8 +5,20 @@ chatserver en client written in python using socketserver module
 
 use the -h or --help argument in commandline to see on how to use
 
+the example users have as password the same as username (ie admin1 admin1, etch)
+
 changelog
 ---------
+
+v0.9:
+* list command now gives users for all rooms if your admin
+* added adduser command for both client and server
+* added command admin to set adminlevel of user for both client and server
+* added reload command to reload the database from from file
+* added savedb command to save database to file for server
+* passwords are now hashed
+* added changepass command to change the password of a user for both client an server
+* added changeownpass command to change your own password for client
 
 v0.8:
 * adminlevels
