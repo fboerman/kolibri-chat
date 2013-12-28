@@ -9,6 +9,10 @@ the example users have as password the same as username (ie admin1 admin1, etch)
 
 changelog
 ---------
+v1.0:
+* changed list command that also nonadmins can see all the users in all the rooms
+* added command amiadmin which returns  your adminlevel
+* added gui for client
 
 v0.9:
 * list command now gives users for all rooms if your admin

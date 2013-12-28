@@ -1,5 +1,5 @@
 __author__ = 'Williewonka-2013'
-__version__ = 0.9
+__version__ = 1.0
 
 from cx_Freeze import setup, Executable
 

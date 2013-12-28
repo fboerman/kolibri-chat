@@ -1,5 +1,5 @@
 __author__ = 'williewonka-2013'
-__version__ = 0.9
+__version__ = 1.0
 
 import socketserver
 import argparse
@@ -76,7 +76,7 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
 
 
             print("INFO: client "+NAME+" authenticated from "+addr+" into room "+str(ROOM))
-            SendRound("connected", ROOM, NAME)
+            SendRound(NAME + " connected", ROOM, "SERVER")
             user = [NAME, self]
             connections[ROOM].append(user)
             connectedclients.append([NAME, addr])
@@ -88,18 +88,19 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
                     if user not in connections[ROOM]:
                         self.request.sendall(bytes("ERROR: user kicked from this room", "utf-8"))
                         return
-
+                    #print("DEBUG: user "+NAME+" send message:"+self.data)
                     if " " in self.data:
                         if self.data.split(" ")[0] == "switch":
+
                             if int(self.data.split(" ")[1]) >= len(connections):
-                                self.request.sendall(bytes("ERROR", "utf-8"))
+                                self.request.sendall(bytes("OK-ERROR", "utf-8"))
                                 continue
                             else:
                                 oldroom = ROOM
                                 connections[ROOM].remove(user)
                                 ROOM = int(self.data.split(" ")[1])
                                 connections[ROOM].append(user)
-                                self.request.sendall(bytes("OK", "utf-8"))
+                                self.request.sendall(bytes("OK-switched to room "+str(ROOM), "utf-8"))
                                 print("INFO: user "+NAME+" switched to room "+str(ROOM))
                                 SendRound("INFO: user "+NAME+" switched to other room", oldroom, "SERVER")
                                 SendRound("connected", ROOM, NAME)
@@ -291,20 +292,38 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
                                 continue
 
                     elif self.data == "list":
-                        if IsAdmin(NAME) > 0:
-                            list = "connected users in room\n"
-                            for i in range(0, len(connections)):
-                                list += str(i)+":\n"
-                                for u in connections[i]:
-                                    list += "\t"+u[0]+"\n"
-                        else:
-                            list = "connected users in room "+str(ROOM)
-                            for u in connections[ROOM]:
-                                list += "\n\t"+u[0]
+                        #if IsAdmin(NAME) > 0:
+                        list = ""
+                        for i in range(0, len(connections)):
+                            list += str(i)+";"
+                            for u in connections[i]:
+                                list += u[0]+";"
+                            list += "|"
+                        #else:
+                        #    list = "connected users in room "+str(ROOM)
+                        #    for u in connections[ROOM]:
+                        #        list += "\n\t"+u[0]
 
                         self.request.sendall(bytes("OK-"+list, "utf-8"))
                         continue
-
+                    elif self.data == "testresponse":
+                        self.request.sendall(bytes("OK-TEST COMPLETE", "utf-8"))
+                        print("client "+NAME+" requested test response")
+                        continue
+                    elif self.data == "amiadmin":
+                        self.request.sendall(bytes(str(IsAdmin(NAME)), "utf-8"))
+                        continue
+                    elif self.data == "banlist":
+                        if IsAdmin(NAME) == 2:
+                            message = ""
+                            for u in users:
+                                if u[3] == 1:
+                                    message += u[0] + "\n"
+                            self.request.sendall(bytes("OK-"+message, "utf-8"))
+                        else:
+                            self.request.sendall(bytes("OK-you do not have enough rights to do that", "utf-8"))
+                            print("INFO: user "+NAME+" tried admin command '"+self.data+"' in room "+str(ROOM))
+                        continue
                     self.request.sendall(bytes("OK","utf-8"))
                     if self.data == "":
                         continue
@@ -343,7 +362,10 @@ def SendRound(Message, Room, Owner):
         if u[0] != Owner:
             socket = u[1]
             try:
-                socket.request.sendall(bytes(Owner+": "+Message, "utf-8"))
+                if Owner == "SERVER":
+                    socket.request.sendall(bytes(Owner+" "+Message, "utf-8"))
+                else:
+                    socket.request.sendall(bytes(Owner+": " + Message, "utf-8"))
             except:
                 print("ERROR: failed to send message to user "+u[0])
 
