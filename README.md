@@ -5,7 +5,7 @@ chatserver en client written in python using socketserver module
 
 use the -h or --help argument in commandline to see on how to use
 
-the example users have as password the same as username (ie admin1 admin1, etch)
+the example users have as password the same as username (ie client1 client1, etc)
 
 changelog
 ---------
