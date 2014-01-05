@@ -1,5 +1,5 @@
-__author__ = 'Williewonka-2013'
-__version__ = 1.0
+__author__ = 'Williewonka'
+__version__ = 1.1
 
 import socket
 import time
@@ -10,6 +10,7 @@ from PySide.QtGui import *
 from PySide import QtCore
 import LoginGui
 import ChatGui
+import json
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 MAXROOM = 0
@@ -36,7 +37,7 @@ class LoginWindow(QMainWindow, LoginGui.Ui_LoginWindow):
         QApplication.setStyle(QStyleFactory.create("plastique"))
 
         #debug:
-        # self.txt_serverip_port.setText("localhost:6000")
+        self.txt_serverip_port.setText("192.168.0.104:600")
 
         self.bt_close.clicked.connect(self.Close)
         self.bt_login.clicked.connect(self.LoginProcedure)
@@ -73,11 +74,16 @@ class LoginWindow(QMainWindow, LoginGui.Ui_LoginWindow):
                 sock.close()
                 return
 
-            Echo(self, "connected! logging in to system ...")
+            Echo(self, "Connected! Logging in to system ...")
             time.sleep(1)
-
+            logindata = {
+                "username": self.txt_username.text(),
+                "password": self.txt_password.text(),
+                "version": str(__version__)
+            }
+            loginpackage = json.dumps(logindata)
             try:
-                sock.sendall(bytes(self.txt_username.text()+" "+self.txt_password.text()+" "+str(__version__), "utf-8"))
+                sock.sendall(bytes(loginpackage, "utf-8"))
                 answer = str(sock.recv(1024), "utf-8")
             except:
                 print("server disconnected during login communication")
@@ -87,7 +93,7 @@ class LoginWindow(QMainWindow, LoginGui.Ui_LoginWindow):
 
             if answer.split(" ")[0] == "OK":
                 MAXROOM = int(answer.split(" ")[1])
-                Echo(self, "userlogin succesfull!, Choosing room...")
+                Echo(self, "Userlogin succesfull!, Choosing room...")
                 while True:
                     #room = input("please select a room(0,"+str(MAXROOM)+"): ")
                     ROOM, ok = QInputDialog.getInteger(self, "Please specify a roomnumber", "Roomnumber:", 0, 0, MAXROOM, 1)

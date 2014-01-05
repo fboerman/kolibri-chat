@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <link rel="stylesheet" href="css/metro-bootstrap.min.css">
+    <link rel="stylesheet" href="css/metro-responsive.min.css">
+    <link rel="stylesheet" href="http://ajax.googleapis.com/ajax/libs/jqueryui/1.10.3/themes/smoothness/jquery-ui.min.css">
+    <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/jqueryui/1.8.17/jquery-ui.min.js"></script>
+    <script type="text/javascript" src="js/metro.min.js"></script>
+
+    <script type="text/javascript">
+    var VERSION = "1.1";
+    var STATE = 1; //states: 1 is login 2 is chatting 3 is waiting for verification
+    var TOKEN = "";//verification token is temp stored here
+    var ROOM = 0;
+    var SOCKET;
+
+    $(window).resize(function(){
+    	$("#header").height(0.2 * $(this).height());
+    });
+
+    $(document).ready(function()
+    {        
+        if( typeof(WebSocket) != "function" ) {
+           $('body').html("<h1>Error</h1><p>Your browser does not support HTML5 Web Sockets. Try the <a href=\"www.google.com/chrome\">latest Google Chrome</a> instead.</p>");
+        }
+        log("browser check passed");
+        $("#header").height(0.2 * $(this).height());
+        $("#loginform").fadeIn('slow');
+        log("client loaded");
+
+        $("#chattext").keypress(function(e){
+            if(e.which == 13){
+                Send();
+            }
+        });
+
+        $("#serverinfo").keypress(function(e){
+            if(e.which == 13){
+                Login()
+            }
+        });
+    }
+    );
+
+    function log(msg)
+    {
+        var currentTime = new Date();
+        var hours = currentTime.getHours();
+        var minutes = currentTime.getMinutes();
+        msg = hours + ":" + minutes + " " + msg + "<br/>";
+        $("#log").prepend(msg);
+    }
+
+    function Login()
+    {
+        if($("#username").val() == "" || $("#password").val() == "" || $("#serverinfo").val() == "" || $("#serverinfo").val().indexOf === -1)
+        {
+            alert("Please fill in all the fields correctly");
+            return;
+        }
+        var host = "ws://" + $("#serverinfo").val();
+        log("Trying to connect to host: " + host + " ...");
+        try
+        {
+            SOCKET = new WebSocket(host);
+            log('Socket Status: ' + SOCKET.readyState);
+            
+            SOCKET.onopen = function(){
+                log('Socket Status: ' + SOCKET.readyState+' (open)');
+
+                log("Connected! Logging in to system ...");
+                var logindata = {
+                    'username': $("#username").val(),
+                    'password': $("#password").val(),
+                    'version': VERSION
+                }
+                var loginpackage = JSON.stringify(logindata)
+                SOCKET.send(loginpackage);    
+            }
+            
+            SOCKET.onmessage = function(event){
+                msg = event.data;
+                switch(STATE)
+                {
+                case 1:
+                    if(msg.split(" ")[0] != "OK")
+                    {
+                        log(msg);
+                        return;
+                    }
+                    $("#loginbutton").attr('disabled', 'disabled');                    
+                    log("Userlogin succesfull!, Choosing room...")
+                    var maxrooms = parseInt(msg.split(" ")[1]);
+                    do
+                    {
+                        var room = prompt("Please specify a roomnumber[0, " + maxrooms + "]","0");
+                        ROOM = parseInt(room);
+                    }while(ROOM > maxrooms)
+                    log("Entering room " + ROOM.toString() + " ...");
+                    SOCKET.send(ROOM.toString());
+                    $("#loginform").fadeOut('fast');
+                    $("#chatform").fadeIn('slow');
+                    $("#log").width('80%');
+                    TOKEN = "OK";
+                    STATE = 3;
+                    break;
+                case 2:
+                    //handle the chatmessage
+                    AddMessage(msg);
+                    //$("#chatbox").append('<div class = "balloon right bg-cyan" style="margin-left: 20px; margin-bottom: 10px;padding:10px;">\n' + msg + '<br/>\n</div>\n');
+                    //$("#chatbox").animate({ scrollTop: $('#chatbox')[0].scrollHeight}, 1000);
+                    break;
+                case 3:
+                    //verification
+
+                    if(msg.indexOf(TOKEN) == -1)
+                    {
+                        if(msg.indexOf("-") == -1)
+                        {
+                            log("WARNING: Verification with Server failed!");
+                        }else
+                        {
+                            $("#chatbox").append('<div class = "balloon right bg-cyan" style="margin-left: 20px; margin-bottom: 10px;padding:10px;">\n' + '<font color = "red">INFO: ' + msg.split("-")[1] + '</font><br/>\n</div>\n');
+                        }                        
+                    }
+                    $("#Send").removeAttr('disabled');
+                    STATE = 2;
+                    break;
+                }
+            }
+            
+            SOCKET.onclose = function(){
+                log('Socket Status: ' + SOCKET.readyState+' (Closed)');
+                STATE = 1;
+                $("#loginbutton").removeAttr('disabled');
+            }
+        }catch(exception)
+        {
+            log("Error occured: " + exception);
+        }
+    }
+    function AddMessage(msg)
+    {
+        $("#chatbox").append('<div class = "balloon right bg-cyan" style="margin-left: 20px; margin-bottom: 10px;padding:10px;">\n' + msg + '<br/>\n</div>\n');
+        $("#chatbox").animate({ scrollTop: $('#chatbox')[0].scrollHeight}, 1000);
+    }
+    function Send()
+    {
+        $("#Send").attr('disabled', 'disabled');
+        STATE = 3;
+        TOKEN = "OK";
+        var message = $("<div/>").html($("#chattext").val()).text();
+        SOCKET.send(message);        
+        //$("#chatbox").append('<div class = "balloon left bg-cyan" style = "padding:10px;margin-right:20px;margin-bottom:10px;">\n' + message + '\n</div>\n');
+        AddMessage(message);
+        $("#chattext").val("");
+    }
+    </script>
+</head>
+<body class="metro" style="background-color:aliceblue;">
+<center>
+<div id="header" style="width:100%;background:inherit;">
+	
+</div>
+<div id="loginform" style="width:60%;min-width:200px;display:none;overflow:auto;">
+    <table border="2" class="table hovered bordered">
+    <tr>
+        <td width="10%">
+            UserName:
+        </td>
+        <td>
+            <div class="input-control text">
+            <input type="text" value="" placeholder="Username" id="username" />
+            <button class="btn-clear"></button>        
+            </div>
+        </td>
+    </tr>
+    <tr>
+        <td>
+            Password:
+        </td>
+        <td>    
+            <div class="input-control password">
+            <input type="password" value="" placeholder="Password" id="password"/>
+            <button class="btn-reveal"></button>
+            </div>
+        </td>
+    </tr>
+    <tr>
+        <td>
+            Server
+        </td>
+        <td>    
+            <div class="input-control text">
+            <input type="text" value="" placeholder="Ip:Port" id="serverinfo"/>
+            <button class="btn-clear"></button>
+            </div>
+        </td>
+    </tr>
+    <tr>
+        <td>
+        </td>
+        <td>    
+            <button class="default" onclick="Login()" id="loginbutton">Login</button>
+        </td>
+    </tr>
+    </table>
+</div>
+
+<div id="chatform" class="bg-lightBlue fg-white" style="width:80%;min-width:500px;overflow:auto;display:none;min-height:400px;padding-top:30px;">
+    <div id="chatmenu" style="width:20%;float:left;background-color: inherit;">
+        Menu PlaceHolder
+    </div>
+    <div id="chatdisplay" style="width:80%;float:right;background-color: inherit;">
+        <div id="chatbox" style="max-height:600px;overflow:auto;">
+            <div class = "balloon right bg-cyan" style="margin-left: 20px; margin-bottom: 10px;padding:10px;">
+                Welcome to Kolibri chat!<br/>You can now begin chatting.
+            </div>
+        </div>
+        <div id="chatinput">
+            <table style="background-color:inherit;">
+                <tr>
+                    <td style="width:100%;">
+                        <div class="input-control text">
+                        <input type="text" value="" placeholder="" id="chattext"/>
+                        <button class="btn-clear"></button>
+                        </div>
+                    </td>
+                    <td>
+                        <button class="default large" onclick="Send()" id="Send" disabled>Send</button>
+                    </td>
+                </tr>
+            </table>            
+        </div>
+    </div>
+</div>
+<div id="log" style="width:60%;text-align:left;padding-top:50px;background-color:inherit;">
+
+</div>
+</center>
+</div>
+</body>
+</html>

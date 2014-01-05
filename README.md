@@ -9,6 +9,13 @@ the example users have as password the same as username (ie client1 client1, etc
 
 changelog
 ---------
+v1.1:
+* html5 client using websockets available
+* websockets support in server
+* buildin html server to server html5 client
+* loginprotocol changed to proper json
+* automatic html stripping on both client and server of messages
+
 v1.0:
 * changed list command that also nonadmins can see all the users in all the rooms
 * added command amiadmin which returns  your adminlevel
