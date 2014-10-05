@@ -1,17 +1,22 @@
 __author__ = 'Williewonka'
-__version__ = 1.1
+__version__ = 1.2
 
 import socket
 import time
 import sys
-#import threading
 import queue
 from PySide.QtGui import *
 from PySide import QtCore
 import LoginGui
 import ChatGui
 import json
+# import ssl
+from math import floor
+import base64
+from cryptography.fernet import Fernet
 
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+# sock = ssl.wrap_socket(s, ca_certs="server.crt", cert_reqs=ssl.CERT_REQUIRED)
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 MAXROOM = 0
 NAME = ""
@@ -20,6 +25,7 @@ dropdown = []
 ROOM = 0
 verficationpipe = queue.Queue()
 whisper = ""
+
 
 # class Signals(QtCore.QObject):
 #     UpdateMenu = QtCore.Signal()
@@ -37,7 +43,7 @@ class LoginWindow(QMainWindow, LoginGui.Ui_LoginWindow):
         QApplication.setStyle(QStyleFactory.create("plastique"))
 
         #debug:
-        self.txt_serverip_port.setText("192.168.0.104:600")
+        self.txt_serverip_port.setText("192.168.1.81:600")
 
         self.bt_close.clicked.connect(self.Close)
         self.bt_login.clicked.connect(self.LoginProcedure)
@@ -48,10 +54,26 @@ class LoginWindow(QMainWindow, LoginGui.Ui_LoginWindow):
     def Close(self):
         self.close()
 
+    def CreateFernet(self, passw):
+        global PERSONALFERNET
+        if len(passw) >= 32:
+            PERSONALFERNET = Fernet(base64.urlsafe_b64encode(str.encode(passw[:32])))
+            return
+        reuse = floor(32/len(passw))
+        temp = ""
+        for i in range(0, reuse):
+            temp += passw
+        rest = 32 - len(temp)
+        for i in range(0,rest):
+            temp += "z"
+        PERSONALFERNET = Fernet(base64.urlsafe_b64encode(str.encode(temp)))
+
+
     def LoginProcedure(self):
         global sock
         global MAXROOM
         global ROOM
+        global PERSONALFERNET
 
         if ":" in self.txt_serverip_port.text() and self.txt_username.text() != "" and self.txt_password.text() != "":
             try:
@@ -84,12 +106,15 @@ class LoginWindow(QMainWindow, LoginGui.Ui_LoginWindow):
             loginpackage = json.dumps(logindata)
             try:
                 sock.sendall(bytes(loginpackage, "utf-8"))
-                answer = str(sock.recv(1024), "utf-8")
+                #from here on communication is encrypted
+                self.CreateFernet(self.txt_password.text())
+                answer = str(PERSONALFERNET.decrypt(sock.recv(1024)), "utf-8")
             except:
                 print("server disconnected during login communication")
                 QMessageBox.information(self, "Error", "server disconnected during login communication")
                 sock.close()
                 return
+
 
             if answer.split(" ")[0] == "OK":
                 MAXROOM = int(answer.split(" ")[1])
@@ -100,9 +125,9 @@ class LoginWindow(QMainWindow, LoginGui.Ui_LoginWindow):
                     if not ok:
                         self.statusbar.showMessage("Aborted")
                         return
-                    sock.sendall(bytes(str(ROOM), "utf-8"))
+                    sock.sendall(PERSONALFERNET.encrypt(str.encode(str(ROOM))))
                     try:
-                        answer2 = str(sock.recv(1024), "utf-8")
+                        answer2 = str(PERSONALFERNET.decrypt(sock.recv(1024)), "utf-8")
                     except:
                         print("server disconnected during login communication, abort")
                         sock.close()
@@ -114,6 +139,7 @@ class LoginWindow(QMainWindow, LoginGui.Ui_LoginWindow):
                         break
 
                 Echo(self, "Roomlogin succesfull!")
+
                 time.sleep(1)
                 global succes
                 succes = True
@@ -148,12 +174,12 @@ class ChatWindow(QMainWindow, ChatGui.Ui_MainWindow):
         Echo(self, "Setting up gui ...")
 
         try:
-            sock.sendall(bytes("amiadmin", "utf-8"))
-            Level = int(sock.recv(1024))
-            sock.sendall(bytes("list", "utf-8"))
-            List = str(sock.recv(1024), "utf-8")
-            sock.sendall(bytes("banlist", "utf-8"))
-            BanList = str(sock.recv(1024), "utf-8")
+            sock.sendall(PERSONALFERNET.encrypt(str.encode("amiadmin")))
+            Level = int(PERSONALFERNET.decrypt(sock.recv(1024)))
+            sock.sendall(PERSONALFERNET.encrypt(str.encode("list")))
+            List = str(PERSONALFERNET.decrypt(sock.recv(1024)), "utf-8")
+            sock.sendall(PERSONALFERNET.encrypt(str.encode("banlist")))
+            BanList = str(PERSONALFERNET.decrypt(sock.recv(1024)), "utf-8")
         except:
             Echo(self, "Server disconnected")
             QMessageBox.information(self, "Error", "Server disconnected during initializing")
@@ -248,11 +274,12 @@ class ChatWindow(QMainWindow, ChatGui.Ui_MainWindow):
             self.SendServer("whisper " + whisper + ":" + self.txt_message.text(), "OK")
 
     def SendServer(self, message, token):
+        global PERSONALFERNET
         self.txt_message.clear()
         if message.split(" ")[0] not in ["help", "switch", "ban", "unban", "ipban", "changepass", "changeownpass"]:
             self.txt_messages.append(NAME+": "+message)
         try:
-            sock.sendall(bytes(message, "utf-8"))
+            sock.sendall(PERSONALFERNET.encrypt(str.encode(message)))
         except:
             self.ServerDrop()
 
@@ -332,9 +359,10 @@ class ServerHandler(QtCore.QThread):
 
     def run(self):
         global ROOM
+        global PERSONALFERNET
         while True:
             try:
-                serverinput = str(sock.recv(1024), "utf-8")
+                serverinput = str(PERSONALFERNET.decrypt(sock.recv(1024)), "utf-8")
             except:
                 sock.close()
                 self.terminate()

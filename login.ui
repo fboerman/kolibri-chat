@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>401</width>
-    <height>199</height>
+    <width>396</width>
+    <height>177</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -23,10 +23,13 @@
       <x>30</x>
       <y>40</y>
       <width>331</width>
-      <height>91</height>
+      <height>81</height>
      </rect>
     </property>
     <layout class="QFormLayout" name="formLayout">
+     <property name="fieldGrowthPolicy">
+      <enum>QFormLayout::AllNonFixedFieldsGrow</enum>
+     </property>
      <item row="0" column="0">
       <widget class="QLabel" name="lbl_username">
        <property name="text">
@@ -78,7 +81,7 @@
     <property name="geometry">
      <rect>
       <x>301</x>
-      <y>140</y>
+      <y>130</y>
       <width>80</width>
       <height>23</height>
      </rect>
@@ -104,7 +107,7 @@
     <property name="geometry">
      <rect>
       <x>220</x>
-      <y>140</y>
+      <y>130</y>
       <width>75</width>
       <height>23</height>
      </rect>
@@ -117,7 +120,6 @@
   <widget class="QStatusBar" name="statusbar"/>
  </widget>
  <resources>
-  <include location="narwhalchat.qrc"/>
  </resources>
  <connections/>
 </ui>

@@ -1,5 +1,5 @@
 __author__ = 'williewonka'
-__version__ = 1.1
+__version__ = 1.2
 
 import socketserver
 import argparse
@@ -14,12 +14,19 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from os.path import splitext, basename
 import mimetypes
 import re
+import socket
+# import ssl
+import PyLogging
+from math import floor
+from cryptography.fernet import Fernet
 
 users = []
 connections = []
 connectedclients= []
 bannedips = []
 MAXCHARS = 124
+MASTERPASS = None
+Log = None
 
 class ThreadedServerHandler(socketserver.BaseRequestHandler):
 
@@ -27,16 +34,29 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
         p = re.compile(r'<.*?>')
         return p.sub('', data)
 
+
+    def CreateFernet(self, passw):
+        if len(passw) >= 32:
+            return Fernet(base64.urlsafe_b64encode(str.encode(passw[:32])))
+        reuse = floor(32/len(passw))
+        temp = ""
+        for i in range(0, reuse):
+            temp += passw
+        rest = 32 - len(temp)
+        for i in range(0,rest):
+            temp += "z"
+        return Fernet(base64.urlsafe_b64encode(str.encode(temp)))
+
     def handle(self): #the handler for the server, this handles the receiving and distributing of messages
         self.websocket = False
         data = self.request.recv(1024)
         addr = self.request.getpeername()[0]
-        if "Upgrade: websocket" in str(data, "utf-8"):
+        if "Connection: Upgrade" in str(data, "utf-8"):
             try:
                 self.HandShake(str(data, "utf-8"))
                 self.websocket = True
             except:
-                print("Incorrect Websocket Upgrade Request from " + addr)
+                Print("Incorrect Websocket Upgrade Request from " + addr)
                 return
         if self.websocket:
             data = self.parse_frame()
@@ -45,8 +65,8 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
             logindata = json.loads(str(data, "utf-8"))
         except:
             self.SendClient("ERROR: wrong format login package")
-            print("ERROR: client from "+str(addr)+" sent wrong loginrequest")
-            print(logindata)
+            Print("ERROR: client from "+str(addr)+" sent wrong loginrequest")
+            Print(logindata)
             return
         NAME = logindata["username"]
         PASS = logindata["password"]
@@ -54,7 +74,7 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
 
         if VERSION != str(__version__):
             self.SendClient("ERROR: wrong version match, server version: "+str(__version__))
-            print("ERROR: client from "+str(addr)+" with username "+NAME+" connected with wrong version "+VERSION)
+            Print("ERROR: client from "+str(addr)+" with username "+NAME+" connected with wrong version "+VERSION)
             return
 
         found = False
@@ -64,22 +84,25 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
                 if check_password(u[1],PASS):
                     if u[3] == 1:
                         self.SendClient("ERROR: this user is banned")
-                        print("ERROR: client from "+str(addr)+" tried loggin in with banned user "+NAME)
+                        Print("ERROR: client from "+str(addr)+" tried loggin in with banned user "+NAME)
                         return
                     found = True
 
         if addr in bannedips:
-            print("ERROR: client from banned ip "+addr+" tried logging in with user "+NAME)
+            Print("ERROR: client from banned ip "+addr+" tried logging in with user "+NAME)
             self.SendClient("ERROR: your ip has been banned from this server")
             return
 
+        self.PERSONALFERNET = self.CreateFernet(PASS)
+
         if found:
             global connections
+
             for room in connections:
                 for connecteduser in room:
                     if connecteduser[0] == NAME:
                         self.SendClient("ERROR: user already logged in")
-                        print("ERROR: client from "+str(addr)+" tried logging in with already online user "+NAME)
+                        Print("ERROR: client from "+str(addr)+" tried logging in with already online user "+NAME)
                         return
 
             self.SendClient("OK "+str(len(connections)-1))
@@ -89,9 +112,9 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
                     if self.websocket:
                         ROOM = int(self.parse_frame())
                     else:
-                        ROOM = int(self.request.recv(1024))
+                        ROOM = int(self.PERSONALFERNET.decrypt(self.request.recv(1024)))
                 except:
-                    print("ERROR: client from "+str(addr)+" with user "+NAME+" disconnected during login process")
+                    Print("ERROR: client from "+str(addr)+" with user "+NAME+" disconnected during login process")
                     return
 
                 if ROOM >= len(connections):
@@ -101,7 +124,7 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
                     break
 
 
-            print("INFO: client "+NAME+" authenticated from "+addr+" into room "+str(ROOM))
+            Print("INFO: client "+NAME+" authenticated from "+addr+" into room "+str(ROOM))
             SendRound(NAME + " connected", ROOM, "SERVER")
             user = [NAME, self]
             connections[ROOM].append(user)
@@ -109,17 +132,22 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
 
             while True:
                 try:
-                    data = ""
-                    if self.websocket:
-                        data = self.parse_frame()
-                    else:
-                        data = self.request.recv(1024)
-                    self.data = str(data, "utf-8")
+                    # data = ""
+                    try:
+                        if self.websocket:
+                            data = self.parse_frame()
+                            self.data = str(data, "utf-8")
+                        else:
+                            data = self.request.recv(1024)
+                            self.data = str(self.PERSONALFERNET.decrypt(data), "utf-8")
+                    except:
+                        print(str(data, "utf-8"))
+
 
                     if user not in connections[ROOM]:
                         self.SendClient("ERROR: user kicked from this room")
                         return
-                    #print("DEBUG: user "+NAME+" send message:"+self.data)
+                    #Print("DEBUG: user "+NAME+" send message:"+self.data)
                     if " " in self.data:
                         try:
                             if self.data.split(" ")[0] == "switch":
@@ -133,7 +161,7 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
                                     ROOM = int(self.data.split(" ")[1])
                                     connections[ROOM].append(user)
                                     self.SendClient("OK-switched to room "+str(ROOM))
-                                    print("INFO: user "+NAME+" switched to room "+str(ROOM))
+                                    Print("INFO: user "+NAME+" switched to room "+str(ROOM))
                                     SendRound("INFO: user "+NAME+" switched to other room", oldroom, "SERVER")
                                     SendRound("connected", ROOM, NAME)
                                     continue
@@ -144,14 +172,14 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
                                     if u[0] == NAME:
                                         if check_password(u[1], oldpass):
                                             u[1] = hash_password(newpass)
-                                            print("INFO: user "+NAME+" changed their password")
+                                            Print("INFO: user "+NAME+" changed their password")
                                             self.SendClient("OK-password changed")
                                         else:
                                             self.SendClient("OK-wrong current password")
                                 continue
                             elif self.data.split(" ")[0] == "kick":
                                 if IsAdmin(NAME) == 0:
-                                    print("INFO: nonadmin user "+NAME+" tried admin command '"+self.data+"' in room "+str(ROOM))
+                                    Print("INFO: nonadmin user "+NAME+" tried admin command '"+self.data+"' in room "+str(ROOM))
                                     self.SendClient("OK-you do not have enought rights to do that")
                                     continue
                                 else:
@@ -170,7 +198,7 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
                                                     targettuple = u
                                     if IsAdmin(NAME) == 1:
                                         if u[3] > 0:
-                                            print("INFO: admin "+NAME+" tried kickin fellow admin "+target)
+                                            Print("INFO: admin "+NAME+" tried kickin fellow admin "+target)
                                             self.SendClient("OK-cant kick fellow admins")
                                             continue
                                     try:
@@ -178,12 +206,12 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
                                         for client in connectedclients:
                                             if client[0] == target:
                                                 connectedclients.remove(client)
-                                        print("INFO: user "+target+" kicked by admin "+NAME+" from room "+str(targetroom))
+                                        Print("INFO: user "+target+" kicked by admin "+NAME+" from room "+str(targetroom))
                                         SendRound("user "+target+" kicked by admin "+NAME, ROOM, NAME)
                                         self.SendClient("OK-user "+target+" kicked from room")
                                         continue
                                     except:
-                                        print("INFO: admin "+NAME+" tried to kick nonconnected user "+target+" in room "+str(ROOM))
+                                        Print("INFO: admin "+NAME+" tried to kick nonconnected user "+target+" in room "+str(ROOM))
                                         self.SendClient("OK-target user not in this room or not enough adminrights")
                                         continue
                             elif self.data.split(" ")[0] == "ipban":
@@ -193,27 +221,27 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
                                     for client in connectedclients:
                                         if client[0] == target:
                                             bannedips.append(client[1])
-                                            print("INFO: admin "+NAME+" banned ip "+client[1]+" from server")
+                                            Print("INFO: admin "+NAME+" banned ip "+client[1]+" from server")
                                             self.SendClient("OK-ip "+client[1]+" banned from server")
                                             found = True
                                     if not found:
                                         self.SendClient("OK-user "+target+"not found")
                                     continue
                                 else:
-                                    print("INFO: nonadmin user "+NAME+" tried admin command '"+self.data+"' in room "+str(ROOM))
+                                    Print("INFO: nonadmin user "+NAME+" tried admin command '"+self.data+"' in room "+str(ROOM))
                                     self.SendClient("OK-you do not have enough rights to do that")
                                     continue
                             elif self.data.split(" ")[0] == "ipunban":
                                 if IsAdmin(NAME) == 2:
                                     try:
                                         bannedips.remove(self.data.split(" ")[1])
-                                        print("INFO: admin "+NAME+" unbanned ip "+self.data.split(" ")[1])
+                                        Print("INFO: admin "+NAME+" unbanned ip "+self.data.split(" ")[1])
                                         self.SendClient("OK-ip unbanned")
                                     except:
                                         self.SendClient("OK-ip not banned")
                                     continue
                                 else:
-                                    print("INFO: admin level 1 "+NAME+" tried admin command '"+self.data+"' in room "+str(ROOM))
+                                    Print("INFO: admin level 1 "+NAME+" tried admin command '"+self.data+"' in room "+str(ROOM))
                                     self.SendClient("OK-you do not have enough rights to do that")
                                     continue
                             elif self.data.split(" ")[0] == "ban":
@@ -223,7 +251,7 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
                                     for u in users:
                                         if u[0] == target:
                                             u[3] = 1
-                                            print("INFO: admin "+NAME+" banned user "+target)
+                                            Print("INFO: admin "+NAME+" banned user "+target)
                                             self.SendClient("OK-user "+target+" banned from server")
                                             for i in range(0, len(connections)):
                                                 SendRound("admin "+NAME+" banned user "+target, i, "SERVER")
@@ -233,7 +261,7 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
                                         self.SendClient("OK-user "+target+" not found in database")
                                     continue
                                 else:
-                                    print("INFO: admin level 1 "+NAME+" tried admin command '"+self.data+"' in room "+str(ROOM))
+                                    Print("INFO: admin level 1 "+NAME+" tried admin command '"+self.data+"' in room "+str(ROOM))
                                     self.SendClient("OK-you do not have enough rights to do that")
                                     continue
                             elif self.data.split(" ")[0] == "unban":
@@ -243,7 +271,7 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
                                     for u in users:
                                         if u[0] == target:
                                             u[3] = 0
-                                            print("INFO: admin "+NAME+" unbanned user "+target)
+                                            Print("INFO: admin "+NAME+" unbanned user "+target)
                                             self.SendClient("OK-user "+target+" unbanned from server")
                                             for i in range(0, len(connections)):
                                                 SendRound("admin "+NAME+" unbanned user "+target, i, "SERVER")
@@ -252,7 +280,7 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
                                         self.SendClient("OK-user "+target+" not found in database")
                                     continue
                                 else:
-                                    print("INFO: admin level 1 "+NAME+" tried admin command '"+self.data+"' in room "+str(ROOM))
+                                    Print("INFO: admin level 1 "+NAME+" tried admin command '"+self.data+"' in room "+str(ROOM))
                                     self.SendClient("OK-you do not have enough rights to do that")
                                     continue
 
@@ -265,7 +293,7 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
                                                 if u[2]:
                                                     u[1].request.sendall(self.create_frame("whisper "+NAME+": "+self.data.split(":")[1]))
                                                 self.SendClient("OK")
-                                                print("whisper from "+NAME+" to "+target+": "+ self.data.split(":")[1])
+                                                Print("whisper from "+NAME+" to "+target+": "+ self.data.split(":")[1])
                                             except:
                                                 self.SendClient("OK-target disconnected")
                                             finally:
@@ -281,12 +309,12 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
                                         continue
                                     else:
                                         users.append([user, hash_password(password), 0, 0])
-                                        print("INFO: user "+user+" added by admin "+NAME)
+                                        Print("INFO: user "+user+" added by admin "+NAME)
                                         self.SendClient("OK-new user "+user+" added")
                                         continue
                                 else:
                                     self.SendClient("OK-you do not have enough rights to do that")
-                                    print("INFO: user "+NAME+" tried admin command '"+self.data+"' in room "+str(ROOM))
+                                    Print("INFO: user "+NAME+" tried admin command '"+self.data+"' in room "+str(ROOM))
                                     continue
                             elif self.data.split(" ")[0] == "changepass":
                                 if IsAdmin(NAME) == 2:
@@ -296,7 +324,7 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
                                     for u in users:
                                         if u[0] == target:
                                             u[1] = newpass
-                                            print("INFO: admin "+NAME+" changed password of user "+target)
+                                            Print("INFO: admin "+NAME+" changed password of user "+target)
                                             self.SendClient("OK-password of user "+target+" changed")
                                             found = True
                                     if not found:
@@ -304,7 +332,7 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
                                     continue
                                 else:
                                     self.SendClient("OK-you do not have enough rights to do that")
-                                    print("INFO: user "+NAME+" tried admin command '"+self.data+"' in room "+str(ROOM))
+                                    Print("INFO: user "+NAME+" tried admin command '"+self.data+"' in room "+str(ROOM))
                                     continue
                             elif self.data.split(" ")[0] == "admin":
                                 if IsAdmin(NAME) == 2:
@@ -316,12 +344,12 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
                                     for u in users:
                                         if u[0] == user:
                                             u[2] = level
-                                    print("INFO: adminlevel for user "+user+" set to "+str(level)+" by admin "+NAME)
+                                    Print("INFO: adminlevel for user "+user+" set to "+str(level)+" by admin "+NAME)
                                     self.SendClient("OK-adminlevel for user "+user+" set to "+str(level))
                                     continue
                                 else:
                                     self.SendClient("OK-you do not have enough rights to do that")
-                                    print("INFO: user "+NAME+" tried admin command '"+self.data+"' in room "+str(ROOM))
+                                    Print("INFO: user "+NAME+" tried admin command '"+self.data+"' in room "+str(ROOM))
                                     continue
                         except:
                             self.SendClient("OK-Error in command")
@@ -343,7 +371,7 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
                         continue
                     elif self.data == "testresponse":
                         self.SendClient("OK-TEST COMPLETE")
-                        print("client "+NAME+" requested test response")
+                        Print("client "+NAME+" requested test response")
                         continue
                     elif self.data == "amiadmin":
                         self.SendClient(str(IsAdmin(NAME)))
@@ -357,21 +385,21 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
                             self.SendClient("OK-"+message)
                         else:
                             self.SendClient("OK-you do not have enough rights to do that")
-                            print("INFO: user "+NAME+" tried admin command '"+self.data+"' in room "+str(ROOM))
+                            Print("INFO: user "+NAME+" tried admin command '"+self.data+"' in room "+str(ROOM))
                         continue
                     global MAXCHARS
                     if len(self.remove_html_tags(self.data)) > MAXCHARS:
                         self.SendClient("OK-Your message has to many characters")
-                        print("client " + NAME + "tried sending a too long message in room " + str(ROOM))
+                        Print("client " + NAME + "tried sending a too long message in room " + str(ROOM))
                     else:
                         self.SendClient("OK")
                         if self.data == "":
                             continue
                         SendRound(self.data, ROOM, NAME)
-                        print(NAME + "<"+str(ROOM)+">: " + self.remove_html_tags(self.data))
+                        Print(NAME + "<"+str(ROOM)+">: " + self.remove_html_tags(self.data))
 
-                except:
-                    print("INFO: client "+NAME+" from "+addr+" in room "+str(ROOM)+" disconnected")
+                except NameError:
+                    Print("INFO: client "+NAME+" from "+addr+" in room "+str(ROOM)+" disconnected")
                     try:
                         connections[ROOM].remove(user)
                         connectedclients.remove([NAME, addr])
@@ -381,7 +409,7 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
                     return
         else:
             self.SendClient("ERROR: no known user and password combination")
-            print("ERROR: client from "+str(addr)+" failed login with user "+NAME)
+            Print("ERROR: client from "+str(addr)+" failed login with user "+NAME)
             return
 
 
@@ -399,22 +427,24 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
             elif "Origin" in line:
                 self.origin = line.split(":")[0]
 
-        # print("websocketkey: " + websocketkey + "\n")
+        # Print("websocketkey: " + websocketkey + "\n")
         fullKey = hashlib.sha1(websocketkey.encode("utf-8") + specificationGUID.encode("utf-8")).digest()
         acceptKey = base64.b64encode(fullKey)
-        # print("acceptKey: " + str(acceptKey, "utf-8") + "\n")
+        # Print("acceptKey: " + str(acceptKey, "utf-8") + "\n")
         if protocol != "":
             handshake = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Protocol: " + protocol + "\r\nSec-WebSocket-Accept: " + str(acceptKey, "utf-8") + "\r\n\r\n"
         else:
             handshake = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: " + str(acceptKey, "utf-8") + "\r\n\r\n"
-        # print(handshake.strip("\n"))
+        # Print(handshake.strip("\n"))
         self.request.send(bytes(handshake, "utf-8"))
 
     def SendClient(self, message):
         if self.websocket:
             self.request.sendall(self.create_frame(message))
         else:
-            self.request.sendall(bytes(message, "utf-8"))
+            message_en = self.PERSONALFERNET.encrypt(str.encode(message))
+            # print(message_en)
+            self.request.sendall(message_en)
 
     def create_frame(self, data):
         # pack bytes for sending to client
@@ -432,8 +462,8 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
 
         # add data
         frame = frame_head + data.encode('utf-8')
-        # print("frame crafted for message " + data + ":")
-        # print(list(hex(b) for b in frame))
+        # Print("frame crafted for message " + data + ":")
+        # Print(list(hex(b) for b in frame))
         return frame
 
     def is_bit_set(self, int_type, offset):
@@ -454,10 +484,10 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
         frame_head = s.recv(2)
 
         # very first bit indicates if this is the final fragment
-        # print("final fragment: ", self.is_bit_set(frame_head[0], 7))
+        # Print("final fragment: ", self.is_bit_set(frame_head[0], 7))
 
         # bits 4-7 are the opcode (0x01 -> text)
-        # print("opcode: ", frame_head[0] & 0x0f)
+        # Print("opcode: ", frame_head[0] & 0x0f)
 
         # mask bit, from client will ALWAYS be 1
         assert self.is_bit_set(frame_head[1], 7)
@@ -471,14 +501,14 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
         elif payload_length == 127:
             raw = s.recv(8)
             payload_length = self.bytes_to_int(raw)
-        # print('Payload is {} bytes'.format(payload_length))
+        # Print('Payload is {} bytes'.format(payload_length))
 
         #masking key
         #All frames sent from the client to the server are masked by a
         #32-bit nounce value that is contained within the frame
 
         masking_key = s.recv(4)
-        # print("mask: ", masking_key, self.bytes_to_int(masking_key))
+        # Print("mask: ", masking_key, self.bytes_to_int(masking_key))
 
         # finally get the payload data:
         masked_data_in = s.recv(payload_length)
@@ -491,6 +521,20 @@ class ThreadedServerHandler(socketserver.BaseRequestHandler):
         return data
 
 
+# class TCPServerSSL(socketserver.TCPServer):
+#
+#     def __init__(self, server_address, RequestHandlerClass, bind_and_activate=True):
+#         socketserver.BaseServer.__init__(self, server_address, RequestHandlerClass)
+#         s = socket.socket(self.address_family, self.socket_type)
+#
+#         self.socket = ssl.wrap_socket(s, server_side=True, certfile="server.crt", keyfile="server.key")
+#
+#         if bind_and_activate:
+#             self.server_bind()
+#             self.server_activate()
+
+# class ThreadedSSLTCPServer(socketserver.ThreadingMixIn, TCPServerSSL):
+#     pass
 
 class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     pass
@@ -517,12 +561,13 @@ def SendRound(Message, Room, Owner):
                     package = Owner + " " + Message
                 else:
                     package = Owner + ": " + remove_html_tags(Message)
-                if Class.websocket:
-                    Class.request.sendall(Class.create_frame(package))
-                else:
-                    Class.request.sendall(bytes(package, "utf-8"))
+                Class.SendClient(package)
+                # if Class.websocket:
+                #     Class.request.sendall(Class.create_frame(package))
+                # else:
+                #     Class.request.sendall(bytes(package, "utf-8"))
             except:
-                print("ERROR: failed to send message to user "+u[0])
+                Print("ERROR: failed to send message to user "+u[0])
 
 def FindUser(user):
     for u in users:
@@ -538,16 +583,16 @@ def ReadDatabase():
             count += 1
             users.append([line.split(" ")[0].strip("\n"), line.split(" ")[1], int(line.split(" ")[2]), int(line.split(" ")[3].strip("\n"))])
         database.close()
-        print("read "+str(count)+" users from file to database")
+        Print("read "+str(count)+" users from file to database")
         count = 0
         database = open("bannedips.txt", "r")
         for line in database:
             count += 1
             bannedips.append(line)
         database.close()
-        print("read "+str(count)+" banned ips from file to database")
+        Print("read "+str(count)+" banned ips from file to database")
     except:
-        print("ERROR: failed reading database, server will now exit")
+        Print("ERROR: failed reading database, server will now exit")
         time.sleep(1)
         database.close()
         sys.exit()
@@ -577,7 +622,7 @@ class httpRequestHandler(BaseHTTPRequestHandler):
         rootdir = "http"
         if filetype not in allowedtypes and filetype != "":
             self.send_response(403)
-            # print("Client from " + origin + " asked for forbidden file " + self.path)
+            # Print("Client from " + origin + " asked for forbidden file " + self.path)
             return
 
         filepath = ""
@@ -590,7 +635,7 @@ class httpRequestHandler(BaseHTTPRequestHandler):
         try:
             stream = open(filepath, 'rb')
         except IOError:
-            # print("GET request to nonexisting file " + self.path + " from client " + origin)
+            # Print("GET request to nonexisting file " + self.path + " from client " + origin)
             self.send_response(404)
             return
 
@@ -603,7 +648,7 @@ class httpRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(stream.read())
         stream.close()
-        # print("GET request to file " + self.path + " answered to client " + origin)
+        # Print("GET request to file " + self.path + " answered to client " + origin)
         return
 
 
@@ -611,9 +656,16 @@ class httpRequestHandler(BaseHTTPRequestHandler):
         self.send_response(403)
         return
 
+    def log_message(self, format, *args):
+        sys.stderr.write("%s - - [%s] %s\n" %
+                         (self.address_string(),
+                          self.log_date_time_string(),
+                          format%args))
+
+
 
 def start_httpserver(HOST):
-        print("starting httpserver at port 80 ...")
+        Print("starting httpserver at port 80 ...")
         mimetypes.init()
         server_address = (HOST, 80)
         global httpserver_thread, httpserver
@@ -621,37 +673,100 @@ def start_httpserver(HOST):
         httpserver_thread = threading.Thread(target=httpserver.serve_forever)
         httpserver_thread.daemon = True
         httpserver_thread.start()
-        print("http server is running, waiting for connections ...")
+        Print("http server is running, waiting for connections ...")
+
+def AdminBackDoorServer(connection):
+    s = socket.socket()
+    s.bind(connection)
+    s.listen(5)
+    serverid = uuid.uuid4().hex
+    Print("admin server started at port " + str(connection[1]))
+    while True:
+        con, addr = s.accept()
+        login = con.recv(1024)
+        try:
+            logindata = json.loads(login)
+            if logindata['user'] == 'admin' and logindata['password'] == MASTERPASS and float(logindata['version']) >= __version__:
+                Print("admin connected from " + addr)
+                info = {
+                    'id' : serverid,
+                    'version' : __version__
+                }
+                try:
+                    con.send(json.dumps(info))
+                    while True:
+                        command = con.recv(1024)
+                        if command is 'users':
+                            con.send(json.dumps(users))
+                        elif command is 'rooms':
+                            con.send(json.dumps(connections))
+                        elif command is 'clients':
+                            con.send(json.dumps(connectedclients))
+                        elif command is 'bannedips':
+                            con.send(json.dumps(bannedips))
+                except:
+                    pass
+            s.shutdown()
+            s.close()
+        except:
+            pass
+        Print("admin disconnected from " + addr)
+        s.shutdown()
+        s.close()
+
+def Print(message):
+    Log.Log(message)
+    print(message)
 
 if __name__ == "__main__":
-    print("Kolibri server version "+str(__version__))
     parser = argparse.ArgumentParser(description='the server component of kolibri chat')
     parser.add_argument('--ip', nargs='?', const=1, type=str, default="localhost", help='specify the ip adress wich the server will bind to, defaults to localhost')
-    parser.add_argument('--port', nargs='?', const=1, type=int, default=6000, help='specify the port number, defaults to 9999')
+    parser.add_argument('--port', nargs='?', const=1, type=int, default=600, help='specify the port number, defaults to 9999')
     parser.add_argument('--numrooms', nargs='?', const=1, type=int, default=1, help='number of chatrooms that is available, defaults to 1')
     parser.add_argument('--httpserver', dest='httpserver', action='store_true', help='activates the http server to serve the html client, uses the same host and port 80, default is off')
+    # parser.add_argument('--ssl', dest='ssl', action='store_true', help='activates ssl encryption for all socket connections')
+    parser.add_argument('--masterpass', nargs='?', const=1, type=str, default='adminpassword', help='master password used to identify at the adminbackdoor')
+    parser.add_argument('--adminbackdoor', dest='backdoor', action='store_true', help='activates the administrator backdoor login')
+    parser.add_argument('--backdoorport', nargs='?', const=1, type=int, default=500, help='port on which the adminbackdoor will run')
+    parser.add_argument('--log', nargs='?', const=1, type=str, default='log.txt', help='specifies path to logfile')
+    parser.set_defaults(backdoor = False)
     parser.set_defaults(httpserver = False)
+    parser.set_defaults(ssl = False)
 
-    HOST, PORT, NUMROOMS, httpserver = parser.parse_args().ip, parser.parse_args().port, parser.parse_args().numrooms, parser.parse_args().httpserver
+    HOST, PORT, NUMROOMS, httpserver, BACKDOOR, MASTERPASS, ADMINPORT, LOGFILE = parser.parse_args().ip, parser.parse_args().port, parser.parse_args().numrooms,\
+                                                                             parser.parse_args().httpserver, parser.parse_args().backdoor,\
+                                                                             parser.parse_args().backdoor, parser.parse_args().backdoorport, parser.parse_args().log
+    # SSL = parser.parse_args().ssl
 
     for i in range(0, NUMROOMS):
         connections.append([])
 
-    print("host: " + HOST + ":" + str(PORT))
-    print("reading database ...")
+    print("logging to " + LOGFILE)
+    Log = PyLogging.PyLogging(logname=LOGFILE)
+
+    Print("Kolibri server version "+str(__version__))
+    Print("host: " + HOST + ":" + str(PORT))
+    Print("reading database ...")
     time.sleep(1)
     ReadDatabase()
-    print("starting server ...")
+    Print("starting server ...")
     time.sleep(1)
+    server = None
+    # if SSL:
+    #     server = ThreadedSSLTCPServer((HOST, PORT), ThreadedServerHandler)
+    # else:
     server = ThreadedTCPServer((HOST, PORT), ThreadedServerHandler)
     server_thread = threading.Thread(target=server.serve_forever)
     server_thread.daemon = True
     server_thread.start()
-    print("Server loop running, waiting for connections ...")
+    Print("Server loop running, waiting for connections ...")
     if httpserver:
         start_httpserver(HOST)
-
-    print("Typ 'help' for available commands")
+    if BACKDOOR:
+        Print("starting admin backdoor ...")
+        adminserver_thread = threading.Thread(target=AdminBackDoorServer, args=((HOST, ADMINPORT),))
+        adminserver_thread.start()
+    Print("Typ 'help' for available commands")
     while True:
         command = input()
         try:
@@ -666,9 +781,9 @@ if __name__ == "__main__":
                         SendRound(message, i, "SERVER")
             elif command == "list":
                 for i in range(0, len(connections)):
-                    print("room "+str(i)+": ")
+                    Print("room "+str(i)+": ")
                     for user in connections[i]:
-                        print("\t"+user[0])
+                        Print("\t"+user[0])
             elif command.split(" ")[0] == "kick":
                 target = command.split(" ")[1]
                 found = False
@@ -679,17 +794,17 @@ if __name__ == "__main__":
                             for client in connectedclients:
                                 if client[0] == target:
                                     connectedclients.remove(client)
-                            print("INFO: user "+target+" kicked from room "+str(i))
+                            Print("INFO: user "+target+" kicked from room "+str(i))
                             SendRound("user "+target+" kicked by SERVER", i, "SERVER")
                             found = True
                 if not found:
-                    print("user "+target+" not connected to server")
+                    Print("user "+target+" not connected to server")
             elif command.split(" ")[0] == "ban":
                 target = command.split(" ")[1]
                 for u in users:
                     if u[0] == target:
                         u[3] = 1
-                        print("INFO: user "+target+" banned")
+                        Print("INFO: user "+target+" banned")
                         for i in range(0, len(connections)):
                             SendRound("user "+target+" banned by SERVER", i, "SERVER")
             elif command.split(" ")[0] == "unban":
@@ -697,46 +812,46 @@ if __name__ == "__main__":
                 for u in users:
                     if u[0] == target:
                         u[3] = 0
-                        print("INFO user "+target+" unbanned")
+                        Print("INFO user "+target+" unbanned")
                         for i in range(0, len(connections)):
                             SendRound("user "+target+" unbanned by SERVER", i, "SERVER")
             elif command == "userlist":
-                print("users in database:\n\tname\t\tadminlevel\tbanstatus")
+                Print("users in database:\n\tname\t\tadminlevel\tbanstatus")
                 for user in users:
-                    print("\t"+user[0]+"\t\t"+str(user[2])+"\t\t\t"+str(user[3]))
+                    Print("\t"+user[0]+"\t\t"+str(user[2])+"\t\t\t"+str(user[3]))
             elif command == "ipbanlist":
-                print("banned ips:")
+                Print("banned ips:")
                 for ip in bannedips:
-                    print("\t"+ip)
+                    Print("\t"+ip)
             elif command.split(" ")[0] == "ipunban":
                 bannedips.remove(command.split(" ")[1])
-                print("INFO: ip "+command.split(" ")[1]+" unbanned")
+                Print("INFO: ip "+command.split(" ")[1]+" unbanned")
             elif command.split(" ")[0] == "ipban":
                 target = command.split(" ")[1]
                 for client in connectedclients:
                     if client[0] == target:
                         bannedips.append(client[1])
-                        print("INFO: ip "+client[1]+" banned")
+                        Print("INFO: ip "+client[1]+" banned")
             elif command.split(" ")[0] == "adduser":
                 user = command.split(" ")[1]
                 password = command.split(" ")[2]
                 if FindUser(user):
-                    print("user "+user+" already exists")
+                    Print("user "+user+" already exists")
                     continue
                 else:
                     users.append([user, hash_password(password), 0, 0])
-                    print("INFO: user "+user+" added")
+                    Print("INFO: user "+user+" added")
                     continue
             elif command.split(" ")[0] == "admin":
                 user = command.split(" ")[1]
                 level = int(command.split(" ")[2])
                 if not FindUser(user):
-                    print("user "+user+" not found")
+                    Print("user "+user+" not found")
                     continue
                 for u in users:
                     if u[0] == user:
                         u[2] = level
-                print("INFO: adminlevel for user "+user+" set to "+str(level))
+                Print("INFO: adminlevel for user "+user+" set to "+str(level))
                 continue
             elif command == "reload":
                 del users[:]
@@ -754,7 +869,7 @@ if __name__ == "__main__":
                 file = open("bannedips.txt", "w")
                 file.write(newfile)
                 file.close()
-                print("database succesfully written to file")
+                Print("database succesfully written to file")
             elif command.split(" ")[0] == "changepass":
                 target = command.split(" ")[1]
                 newpass = hash_password(command.split(" ")[2])
@@ -762,18 +877,18 @@ if __name__ == "__main__":
                 for u in users:
                     if u[0] == target:
                         u[1] = newpass
-                        print("password changed!")
+                        Print("password changed!")
                         found = True
                 if not found:
-                    print("user not found")
+                    Print("user not found")
             elif command == "startHttpServer":
                 start_httpserver(HOST)
             elif command == "stopHttpServer":
                 # global httpserver
                 httpserver.shutdown()
-                print("stopped httpserver")
+                Print("stopped httpserver")
             elif command == "help":
-                print("available commands:\n"
+                Print("available commands:\n"
                       "\tsay>room:message : when no room given, broadcast to all the rooms otherwise just send to specified room\n"
                       "\tkick user : kicks user from the server\n"
                       "\tlist : list of connected users per room\n"

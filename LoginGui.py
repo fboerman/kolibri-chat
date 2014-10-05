@@ -2,8 +2,8 @@
 
 # Form implementation generated from reading ui file 'login.ui'
 #
-# Created: Mon Nov 11 18:53:08 2013
-#      by: pyside-uic 0.2.15 running on PySide 1.2.1
+# Created: Sun Oct  5 20:43:43 2014
+#      by: pyside-uic 0.2.15 running on PySide 1.2.2
 #
 # WARNING! All changes made in this file will be lost!
 
@@ -12,14 +12,15 @@ from PySide import QtCore, QtGui
 class Ui_LoginWindow(object):
     def setupUi(self, LoginWindow):
         LoginWindow.setObjectName("LoginWindow")
-        LoginWindow.resize(401, 199)
+        LoginWindow.resize(396, 177)
         LoginWindow.setLocale(QtCore.QLocale(QtCore.QLocale.English, QtCore.QLocale.UnitedKingdom))
         self.centralwidget = QtGui.QWidget(LoginWindow)
         self.centralwidget.setObjectName("centralwidget")
         self.formLayoutWidget = QtGui.QWidget(self.centralwidget)
-        self.formLayoutWidget.setGeometry(QtCore.QRect(30, 40, 331, 91))
+        self.formLayoutWidget.setGeometry(QtCore.QRect(30, 40, 331, 81))
         self.formLayoutWidget.setObjectName("formLayoutWidget")
         self.formLayout = QtGui.QFormLayout(self.formLayoutWidget)
+        self.formLayout.setFieldGrowthPolicy(QtGui.QFormLayout.AllNonFixedFieldsGrow)
         self.formLayout.setContentsMargins(0, 0, 0, 0)
         self.formLayout.setObjectName("formLayout")
         self.lbl_username = QtGui.QLabel(self.formLayoutWidget)
@@ -42,13 +43,13 @@ class Ui_LoginWindow(object):
         self.txt_serverip_port.setObjectName("txt_serverip_port")
         self.formLayout.setWidget(2, QtGui.QFormLayout.FieldRole, self.txt_serverip_port)
         self.bt_login = QtGui.QPushButton(self.centralwidget)
-        self.bt_login.setGeometry(QtCore.QRect(301, 140, 80, 23))
+        self.bt_login.setGeometry(QtCore.QRect(301, 130, 80, 23))
         self.bt_login.setObjectName("bt_login")
         self.lbl_name = QtGui.QLabel(self.centralwidget)
         self.lbl_name.setGeometry(QtCore.QRect(30, 20, 91, 16))
         self.lbl_name.setObjectName("lbl_name")
         self.bt_close = QtGui.QPushButton(self.centralwidget)
-        self.bt_close.setGeometry(QtCore.QRect(220, 140, 75, 23))
+        self.bt_close.setGeometry(QtCore.QRect(220, 130, 75, 23))
         self.bt_close.setObjectName("bt_close")
         LoginWindow.setCentralWidget(self.centralwidget)
         self.statusbar = QtGui.QStatusBar(LoginWindow)

@@ -9,6 +9,10 @@ the example users have as password the same as username (ie client1 client1, etc
 
 changelog
 ---------
+v1.2:
+* added fernet encryption for python app
+* made beginning for admin backdoor server management tool
+
 v1.1:
 * html5 client using websockets available
 * websockets support in server
